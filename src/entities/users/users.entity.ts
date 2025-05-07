@@ -22,11 +22,11 @@ export class User {
   @ApiProperty({ description: 'Unique identifier for the user' })
   _id: Types.ObjectId;
 
-  @ApiProperty({ description: 'User\'s first name', example: 'John' })
+  @ApiProperty({ description: 'User\'s first name', example: 'Alessandro' })
   @Prop({ required: true })
   name: string;
 
-  @ApiProperty({ description: 'User\'s last name', example: 'Doe' })
+  @ApiProperty({ description: 'User\'s last name', example: 'Colantuoni' })
   @Prop({ required: true })
   surname: string;
 
@@ -44,21 +44,21 @@ export class User {
 
   @ApiProperty({ 
     description: 'User\'s biography',
-    example: 'I love photography and traveling'
+    example: 'I love travel'
   })
   @Prop({ default: '' })
   bio: string;
 
   @ApiProperty({ 
     description: 'User\'s email address',
-    example: 'john.doe@example.com'
+    example: 'ale@ale.com'
   })
   @Prop({ required: true, unique: true })
   email: string;
 
   @ApiProperty({ 
     description: 'User\'s username',
-    example: 'johndoe'
+    example: '1234'
   })
   @Prop({ required: true, unique: true })
   username: string;

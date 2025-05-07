@@ -3,20 +3,12 @@ import { UsersService } from './users.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { User } from '../entities/users/users.entity';
+import { Public } from '../auth/decorators/public.decorators';
 
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create a new user' })
-  @ApiResponse({ status: 201, description: 'User successfully created.' })
-  @ApiResponse({ status: 400, description: 'Bad request.' })
-  @ApiResponse({ status: 409, description: 'Email or username already exists.' })
-  create(@Body() createUserDto: Partial<User>) {
-    return this.usersService.create(createUserDto);
-  }
 
   @Get()
   @UseGuards(AuthGuard)

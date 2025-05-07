@@ -24,6 +24,7 @@ import { SignupDTO } from 'src/DTO/signup-dto';
     constructor(private readonly authService: AuthService) {}
   
     @Post('signup')
+    @Public()
     @ApiOperation({ summary: 'Register a new user' })
     @ApiResponse({ status: 201, description: 'User successfully registered.' })
     @ApiResponse({ status: 400, description: 'Bad request.' })
@@ -33,6 +34,7 @@ import { SignupDTO } from 'src/DTO/signup-dto';
     }
 
     @Post('login')
+    @Public()
     @HttpCode(HttpStatus.OK)
     @ApiOperation({ summary: 'Login user' })
     @ApiResponse({ status: 200, description: 'User successfully logged in.' })

@@ -12,12 +12,14 @@ dotenv.config();
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/home-service'),
     AuthModule,
     UsersModule,
     ChatModule,
     PostModule,
-    ConfigModule.forRoot(),
     RedisModule,
   ],
 })

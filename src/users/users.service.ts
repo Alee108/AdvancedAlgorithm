@@ -2,11 +2,13 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../entities/users/users.entity';
+import { Neo4jService } from '../neo4j/neo4j.service';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private neo4jService: Neo4jService
   ) {}
 
   async create(createUserDto: Partial<User>): Promise<UserDocument> {
@@ -28,7 +30,23 @@ export class UsersService {
       follows: []
     });
 
-    return newUser.save();
+    const savedUser = await newUser.save();
+
+    // Create user in Neo4j
+    try {
+      await this.neo4jService.createUser(
+        savedUser._id.toString(),
+        savedUser.username,
+        savedUser.name,
+        savedUser.surname
+      );
+    } catch (error) {
+      // If Neo4j creation fails, delete the MongoDB user and throw error
+      await this.userModel.findByIdAndDelete(savedUser._id);
+      throw new Error('Failed to create user in Neo4j');
+    }
+
+    return savedUser;
   }
 
   async findAll(): Promise<UserDocument[]> {

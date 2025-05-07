@@ -3,9 +3,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/entities/users/users.entity';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { Neo4jModule } from '../neo4j/neo4j.module';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: User.name, schema: UserSchema }])],
+  imports: [
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    Neo4jModule
+  ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],
