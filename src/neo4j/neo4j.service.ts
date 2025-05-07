@@ -40,6 +40,37 @@ export class Neo4jService implements OnModuleDestroy {
     }
   }
 
+  async createFollowRelationship(followerId: string, followingId: string): Promise<void> {
+    const session: Session = this.driver.session();
+    try {
+      await session.run(
+        `
+        MATCH (follower:User {id: $followerId})
+        MATCH (following:User {id: $followingId})
+        MERGE (follower)-[r:FOLLOWS]->(following)
+        `,
+        { followerId, followingId },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  async removeFollowRelationship(followerId: string, followingId: string): Promise<void> {
+    const session: Session = this.driver.session();
+    try {
+      await session.run(
+        `
+        MATCH (follower:User {id: $followerId})-[r:FOLLOWS]->(following:User {id: $followingId})
+        DELETE r
+        `,
+        { followerId, followingId },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
   async onModuleDestroy() {
     await this.driver.close();
   }

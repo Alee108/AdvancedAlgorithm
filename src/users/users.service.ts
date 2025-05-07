@@ -100,7 +100,7 @@ export class UsersService {
       throw new NotFoundException('Invalid user ID');
     }
 
-    // Add to follows list
+    // Add to follows list in MongoDB
     const user = await this.userModel.findByIdAndUpdate(
       userId,
       { $addToSet: { follows: userToFollowId } },
@@ -111,11 +111,30 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Add to followers list of the followed user
+    // Add to followers list of the followed user in MongoDB
     await this.userModel.findByIdAndUpdate(
       userToFollowId,
       { $addToSet: { followers: userId } }
     );
+
+    // Create follow relationship in Neo4j
+    try {
+      await this.neo4jService.createFollowRelationship(
+        userId.toString(),
+        userToFollowId.toString()
+      );
+    } catch (error) {
+      // If Neo4j operation fails, rollback MongoDB changes
+      await this.userModel.findByIdAndUpdate(
+        userId,
+        { $pull: { follows: userToFollowId } }
+      );
+      await this.userModel.findByIdAndUpdate(
+        userToFollowId,
+        { $pull: { followers: userId } }
+      );
+      throw new Error('Failed to create follow relationship in Neo4j');
+    }
 
     return user;
   }
@@ -125,7 +144,7 @@ export class UsersService {
       throw new NotFoundException('Invalid user ID');
     }
 
-    // Remove from follows list
+    // Remove from follows list in MongoDB
     const user = await this.userModel.findByIdAndUpdate(
       userId,
       { $pull: { follows: userToUnfollowId } },
@@ -136,11 +155,30 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Remove from followers list of the unfollowed user
+    // Remove from followers list of the unfollowed user in MongoDB
     await this.userModel.findByIdAndUpdate(
       userToUnfollowId,
       { $pull: { followers: userId } }
     );
+
+    // Remove follow relationship in Neo4j
+    try {
+      await this.neo4jService.removeFollowRelationship(
+        userId.toString(),
+        userToUnfollowId.toString()
+      );
+    } catch (error) {
+      // If Neo4j operation fails, rollback MongoDB changes
+      await this.userModel.findByIdAndUpdate(
+        userId,
+        { $addToSet: { follows: userToUnfollowId } }
+      );
+      await this.userModel.findByIdAndUpdate(
+        userToUnfollowId,
+        { $addToSet: { followers: userId } }
+      );
+      throw new Error('Failed to remove follow relationship in Neo4j');
+    }
 
     return user;
   }
