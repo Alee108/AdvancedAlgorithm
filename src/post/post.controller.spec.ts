@@ -248,14 +248,14 @@ describe('PostController', () => {
       const postId = new Types.ObjectId();
       const expectedResult = {
         _id: postId,
-        likes: 1,
+        likes: [mockUser.sub],
       };
 
       mockPostService.addLike.mockResolvedValue(expectedResult);
 
-      const result = await controller.addLike(postId.toString());
+      const result = await controller.addLike(postId.toString(), mockRequest);
       expect(result).toEqual(expectedResult);
-      expect(mockPostService.addLike).toHaveBeenCalledWith(postId.toString());
+      expect(mockPostService.addLike).toHaveBeenCalledWith(postId.toString(), mockUser.sub);
     });
   });
 

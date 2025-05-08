@@ -31,6 +31,11 @@ export class UpdatePostDto {
   @ApiProperty({ type: 'string', format: 'binary', description: 'Post image', required: false })
   @IsOptional()
   image?: Express.Multer.File;
+
+  @ApiProperty({ required: false, description: 'Base64 encoded image' })
+  @IsString()
+  @IsOptional()
+  base64Image?: string;
 }
 
 export class AddCommentDto {

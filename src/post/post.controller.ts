@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostDto, UpdatePostDto, AddCommentDto } from './post.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
@@ -43,29 +43,27 @@ export class PostController {
   async create(
     @Body() createPostDto: CreatePostDto,
     @UploadedFile() file: Express.Multer.File,
-    @Request() req
+    @Req() req: any
   ) {
     try {
-      if (!file) {
-        throw new Error('Image file is required');
+      let base64Image: string | null = null;
+      
+      if (file) {
+        // Read the file and convert to base64
+        const imageBuffer = fs.readFileSync(file.path);
+        base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
+
+        // Delete the temporary file
+        fs.unlinkSync(file.path);
       }
 
-      // Read the file and convert to base64
-      const imageBuffer = fs.readFileSync(file.path);
-      const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
-
-      // Delete the temporary file
-      fs.unlinkSync(file.path);
-
-      // Create post with base64 image
       const postData = {
-        description: createPostDto.description,
-        location: createPostDto.location,
-        base64Image,
-        userId: new Types.ObjectId(req.user.sub)
+        ...createPostDto,
+        imageUrl: base64Image,
+        userId: req.user.sub
       };
 
-      return await this.postService.create(postData);
+      return this.postService.create(postData);
     } catch (error) {
       console.error('Error creating post:', error);
       throw error;
@@ -116,11 +114,6 @@ export class PostController {
     @UploadedFile() file: Express.Multer.File
   ) {
     try {
-      const updateData: Partial<CreatePostData> = {
-        description: updatePostDto.description,
-        location: updatePostDto.location
-      };
-
       if (file) {
         // Read the file and convert to base64
         const imageBuffer = fs.readFileSync(file.path);
@@ -129,10 +122,10 @@ export class PostController {
         // Delete the temporary file
         fs.unlinkSync(file.path);
 
-        updateData.base64Image = base64Image;
+        return this.postService.update(id, { ...updatePostDto, base64Image });
       }
 
-      return this.postService.update(id, updateData);
+      return this.postService.update(id, updatePostDto);
     } catch (error) {
       console.error('Error updating post:', error);
       throw error;
@@ -151,8 +144,16 @@ export class PostController {
   @ApiOperation({ summary: 'Like a post' })
   @ApiResponse({ status: 200, description: 'Post liked successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  addLike(@Param('id') id: string) {
-    return this.postService.addLike(id);
+  addLike(@Param('id') id: string, @Req() req: any) {
+    return this.postService.addLike(id, req.user.sub);
+  }
+
+  @Delete(':id/like')
+  @ApiOperation({ summary: 'Remove a like from a post' })
+  @ApiResponse({ status: 200, description: 'Like removed successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  removeLike(@Param('id') id: string, @Req() req: any) {
+    return this.postService.removeLike(id, req.user.sub);
   }
 
   @Post(':id/comment')
@@ -162,7 +163,7 @@ export class PostController {
   addComment(
     @Param('id') id: string,
     @Body() addCommentDto: AddCommentDto,
-    @Request() req
+    @Req() req: any
   ) {
     return this.postService.addComment(id, req.user.sub, addCommentDto.text);
   }
