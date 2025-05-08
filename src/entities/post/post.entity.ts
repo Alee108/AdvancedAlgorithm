@@ -31,19 +31,8 @@ export class Post {
   likes: Types.ObjectId[];
 
   @ApiProperty()
-  @Prop({
-    type: [{
-      text: { type: String, required: true },
-      user: { type: Types.ObjectId, ref: 'User', required: true },
-      createdAt: { type: Date, default: Date.now }
-    }],
-    default: []
-  })
-  comments: {
-    text: string;
-    user: Types.ObjectId;
-    createdAt: Date;
-  }[];
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Comment' }], default: [] })
+  comments: Types.ObjectId[];
 
   @ApiProperty({
     description: 'Metadata for the post (initially empty, will be populated by visual analyzer)',

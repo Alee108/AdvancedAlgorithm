@@ -24,11 +24,20 @@ export class PostService {
   }
 
   async findAll(): Promise<PostDocument[]> {
-    return this.postModel.find().exec();
+    return this.postModel
+      .find()
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments')
+      .exec();
   }
 
   async findOne(id: string): Promise<PostDocument> {
-    const post = await this.postModel.findById(id).exec();
+    const post = await this.postModel
+      .findById(id)
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments')
+      .exec();
+    
     if (!post) {
       throw new NotFoundException(`Post with ID ${id} not found`);
     }
@@ -38,7 +47,10 @@ export class PostService {
   async update(id: string, updatePostDto: UpdatePostDto): Promise<PostDocument> {
     const updatedPost = await this.postModel
       .findByIdAndUpdate(id, updatePostDto, { new: true })
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments')
       .exec();
+    
     if (!updatedPost) {
       throw new NotFoundException(`Post with ID ${id} not found`);
     }
@@ -104,24 +116,6 @@ export class PostService {
     }
   }
 
-  async addComment(postId: string, userId: string, text: string): Promise<PostDocument> {
-    const post = await this.findOne(postId);
-    post.comments.push({
-      text,
-      user: new Types.ObjectId(userId),
-      createdAt: new Date()
-    });
-    return post.save();
-  }
-
-  async findByTags(tags: string[]): Promise<PostDocument[]> {
-    return this.postModel
-      .find({ tags: { $in: tags } })
-      .populate('userId', 'name surname username profilePhoto')
-      .populate('comments.user', 'name surname username profilePhoto')
-      .exec();
-  }
-
   async findByUser(userId: string): Promise<PostDocument[]> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID');
@@ -129,7 +123,7 @@ export class PostService {
     return this.postModel
       .find({ userId: new Types.ObjectId(userId) })
       .populate('userId', 'name surname username profilePhoto')
-      .populate('comments.user', 'name surname username profilePhoto')
+      .populate('comments')
       .exec();
   }
 } 

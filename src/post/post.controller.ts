@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { PostService } from './post.service';
-import { CreatePostDto, UpdatePostDto, AddCommentDto } from './post.dto';
+import { CommentsService } from '../comments/comments.service';
+import { CreatePostDto, UpdatePostDto } from './post.dto';
+import { CreateCommentDto } from '../comments/comments.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
@@ -16,7 +18,10 @@ import { CreatePostData } from './post.service';
 @Controller('posts')
 @UseGuards(AuthGuard)
 export class PostController {
-  constructor(private readonly postService: PostService) {}
+  constructor(
+    private readonly postService: PostService,
+    private readonly commentsService: CommentsService
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new post' })
@@ -59,7 +64,7 @@ export class PostController {
 
       const postData = {
         ...createPostDto,
-        imageUrl: base64Image,
+        base64Image,
         userId: req.user.sub
       };
 
@@ -162,10 +167,10 @@ export class PostController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   addComment(
     @Param('id') id: string,
-    @Body() addCommentDto: AddCommentDto,
+    @Body() createCommentDto: CreateCommentDto,
     @Req() req: any
   ) {
-    return this.postService.addComment(id, req.user.sub, addCommentDto.text);
+    return this.commentsService.create(createCommentDto, req.user.sub, id);
   }
 
   @Get('user/:userId')

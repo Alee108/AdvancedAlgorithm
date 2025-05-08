@@ -7,6 +7,7 @@ import { ChatModule } from './chat/chat.module';
 import { ConfigModule } from '@nestjs/config';
 import { RedisModule } from './redis/redis.module';
 import { PostModule } from './post/post.module';
+import { CommentsModule } from './comments/comments.module';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ dotenv.config();
     ChatModule,
     PostModule,
     RedisModule,
+    CommentsModule
   ],
 })
 export class AppModule {}
