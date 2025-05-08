@@ -3,11 +3,11 @@ import { IsEmail, IsString } from 'class-validator';
 import { User } from '../entities/users/users.entity';
 
 export class LoginDTO {
-  @ApiProperty({ example: 'john.doe@example.com' })
+  @ApiProperty({ example: 'ale@ale.com' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'password123' })
+  @ApiProperty({ example: '123' })
   @IsString()
   password: string;
 }

@@ -1,32 +1,81 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { PostService } from './post.service';
-import { Post as PostEntity } from 'src/entities/post/post.entity';
-import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { Public } from 'src/auth/decorators/public.decorators';
-import { CreatePostDto } from '../DTO/create-post.dto';
+import { CreatePostDto, UpdatePostDto, AddCommentDto } from './post.dto';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard';
+import { Public } from '../auth/decorators/public.decorators';
+import { Types } from 'mongoose';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import * as fs from 'fs';
+import { CreatePostData } from './post.service';
 
-@Controller('posts')
-@ApiTags('Posts')
+@ApiTags('posts')
 @ApiBearerAuth()
+@Controller('posts')
 @UseGuards(AuthGuard)
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new post' })
-  @ApiBody({ type: CreatePostDto })
-  create(@Body() createPostDto: CreatePostDto, @Request() req) {
-    console.log('User from request:', req.user);
-    return this.postService.create({
-      ...createPostDto,
-      userId: req.user.sub
-    });
+  @ApiResponse({ status: 201, description: 'Post created successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: './uploads/posts',
+        filename: (req, file, callback) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          callback(null, `${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (req, file, callback) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+          return callback(new Error('Only image files are allowed!'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async create(
+    @Body() createPostDto: CreatePostDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req
+  ) {
+    try {
+      if (!file) {
+        throw new Error('Image file is required');
+      }
+
+      // Read the file and convert to base64
+      const imageBuffer = fs.readFileSync(file.path);
+      const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
+
+      // Delete the temporary file
+      fs.unlinkSync(file.path);
+
+      // Create post with base64 image
+      const postData = {
+        description: createPostDto.description,
+        location: createPostDto.location,
+        base64Image,
+        userId: new Types.ObjectId(req.user.sub)
+      };
+
+      return await this.postService.create(postData);
+    } catch (error) {
+      console.error('Error creating post:', error);
+      throw error;
+    }
   }
 
   @Get()
   @Public()
   @ApiOperation({ summary: 'Get all posts' })
+  @ApiResponse({ status: 200, description: 'Return all posts' })
   findAll() {
     return this.postService.findAll();
   }
@@ -34,60 +83,94 @@ export class PostController {
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get a post by id' })
+  @ApiResponse({ status: 200, description: 'Return the post' })
   findOne(@Param('id') id: string) {
     return this.postService.findOne(id);
   }
 
-  @Put(':id')
+  @Patch(':id')
   @ApiOperation({ summary: 'Update a post' })
-  update(@Param('id') id: string, @Body() updatePostDto: Partial<PostEntity>) {
-    return this.postService.update(id, updatePostDto);
+  @ApiResponse({ status: 200, description: 'Post updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: './uploads/posts',
+        filename: (req, file, callback) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          callback(null, `${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (req, file, callback) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+          return callback(new Error('Only image files are allowed!'), false);
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async update(
+    @Param('id') id: string,
+    @Body() updatePostDto: UpdatePostDto,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    try {
+      const updateData: Partial<CreatePostData> = {
+        description: updatePostDto.description,
+        location: updatePostDto.location
+      };
+
+      if (file) {
+        // Read the file and convert to base64
+        const imageBuffer = fs.readFileSync(file.path);
+        const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
+
+        // Delete the temporary file
+        fs.unlinkSync(file.path);
+
+        updateData.base64Image = base64Image;
+      }
+
+      return this.postService.update(id, updateData);
+    } catch (error) {
+      console.error('Error updating post:', error);
+      throw error;
+    }
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a post' })
+  @ApiResponse({ status: 200, description: 'Post deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   remove(@Param('id') id: string) {
     return this.postService.delete(id);
   }
 
   @Post(':id/like')
-  @ApiOperation({ summary: 'Add a like to a post' })
+  @ApiOperation({ summary: 'Like a post' })
+  @ApiResponse({ status: 200, description: 'Post liked successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   addLike(@Param('id') id: string) {
     return this.postService.addLike(id);
   }
 
   @Post(':id/comment')
   @ApiOperation({ summary: 'Add a comment to a post' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        text: {
-          type: 'string',
-          example: 'This is a comment'
-        }
-      }
-    }
-  })
+  @ApiResponse({ status: 201, description: 'Comment added successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   addComment(
     @Param('id') id: string,
-    @Body() commentData: { text: string },
+    @Body() addCommentDto: AddCommentDto,
     @Request() req
   ) {
-    return this.postService.addComment(id, req.user.sub, commentData.text);
-  }
-
-  @Get('tags/search')
-  @Public()
-  @ApiOperation({ summary: 'Search posts by tags' })
-  findByTags(@Query('tags') tags: string) {
-    const tagArray = tags.split(',').map(tag => tag.trim());
-    return this.postService.findByTags(tagArray);
+    return this.postService.addComment(id, req.user.sub, addCommentDto.text);
   }
 
   @Get('user/:userId')
   @Public()
   @ApiOperation({ summary: 'Get all posts by a user' })
+  @ApiResponse({ status: 200, description: 'Return all posts by the user' })
   findByUser(@Param('userId') userId: string) {
     return this.postService.findByUser(userId);
   }

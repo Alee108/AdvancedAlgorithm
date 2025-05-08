@@ -69,26 +69,17 @@ export class User {
   @Prop({ required: true })
   password: string;
 
-  @ApiProperty({ 
-    description: 'URL to user\'s profile photo',
-    example: 'https://example.com/profile.jpg'
-  })
-  @Prop({ default: '' })
-  profilePhoto: string;
+  @ApiProperty({ description: 'Base64 encoded profile photo' })
+  @Prop({ type: String, default: null })
+  profilePhoto: string | null;
 
-  @ApiProperty({ 
-    description: 'List of user IDs who follow this user',
-    type: [String]
-  })
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  @ApiProperty({ type: [String], description: 'List of user IDs that this user follows' })
+  @Prop({ type: [Types.ObjectId], default: [] })
+  following: Types.ObjectId[];
+
+  @ApiProperty({ type: [String], description: 'List of user IDs that follow this user' })
+  @Prop({ type: [Types.ObjectId], default: [] })
   followers: Types.ObjectId[];
-
-  @ApiProperty({ 
-    description: 'List of user IDs this user follows',
-    type: [String]
-  })
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
-  follows: Types.ObjectId[];
 
   @ApiProperty({ 
     description: 'User\'s role in the system',

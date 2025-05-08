@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
+import { CreateUserData, UpdateUserData } from './users.dto';
 
 @Injectable()
 export class UsersService {
@@ -11,46 +12,13 @@ export class UsersService {
     private neo4jService: Neo4jService
   ) {}
 
-  async create(createUserDto: Partial<User>): Promise<UserDocument> {
-    // Check if email already exists
-    const existingEmail = await this.userModel.findOne({ email: createUserDto.email });
-    if (existingEmail) {
-      throw new ConflictException('Email already exists');
-    }
-
-    // Check if username already exists
-    const existingUsername = await this.userModel.findOne({ username: createUserDto.username });
-    if (existingUsername) {
-      throw new ConflictException('Username already exists');
-    }
-
-    const newUser = new this.userModel({
-      ...createUserDto,
-      followers: [],
-      follows: []
-    });
-
-    const savedUser = await newUser.save();
-
-    // Create user in Neo4j
-    try {
-      await this.neo4jService.createUser(
-        savedUser._id.toString(),
-        savedUser.username,
-        savedUser.name,
-        savedUser.surname
-      );
-    } catch (error) {
-      // If Neo4j creation fails, delete the MongoDB user and throw error
-      await this.userModel.findByIdAndDelete(savedUser._id);
-      throw new Error('Failed to create user in Neo4j');
-    }
-
-    return savedUser;
+  async create(createUserData: CreateUserData): Promise<UserDocument> {
+    const createdUser = new this.userModel(createUserData);
+    return createdUser.save();
   }
 
   async findAll(): Promise<UserDocument[]> {
-    return this.userModel.find().select('-password').exec();
+    return this.userModel.find().exec();
   }
 
   async findOne(email: string): Promise<UserDocument | null> {
@@ -58,171 +26,98 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<UserDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException('Invalid user ID');
-    }
-    const user = await this.userModel.findById(id).select('-password').exec();
+    const user = await this.userModel.findById(id).exec();
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
     return user;
   }
 
-  async update(id: string, updateUserDto: Partial<User>): Promise<UserDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException('Invalid user ID');
-    }
+  async findByEmail(email: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ email }).exec();
+  }
 
+  async update(id: string, updateUserData: UpdateUserData): Promise<UserDocument> {
     const updatedUser = await this.userModel
-      .findByIdAndUpdate(id, updateUserDto, { new: true })
-      .select('-password')
+      .findByIdAndUpdate(id, updateUserData, { new: true })
       .exec();
-
     if (!updatedUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
-
     return updatedUser;
   }
 
   async delete(id: string): Promise<void> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException('Invalid user ID');
-    }
-    const result = await this.userModel.findByIdAndDelete(id).exec();
-    if (!result) {
-      throw new NotFoundException('User not found');
+    const result = await this.userModel.deleteOne({ _id: id }).exec();
+    if (result.deletedCount === 0) {
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
   }
 
   async followUser(userId: string, userToFollowId: string): Promise<UserDocument> {
-    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(userToFollowId)) {
-      throw new NotFoundException('Invalid user ID');
+    const user = await this.findById(userId);
+    const userToFollow = await this.findById(userToFollowId);
+
+    if (!user.following) {
+      user.following = [];
+    }
+    if (!userToFollow.followers) {
+      userToFollow.followers = [];
     }
 
-    // Add to follows list in MongoDB
-    const user = await this.userModel.findByIdAndUpdate(
-      userId,
-      { $addToSet: { follows: userToFollowId } },
-      { new: true }
-    ).select('-password');
+    const userToFollowObjectId = new Types.ObjectId(userToFollowId);
+    const userObjectId = new Types.ObjectId(userId);
 
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
+    if (!user.following.some(id => id.equals(userToFollowObjectId))) {
+      user.following.push(userToFollowObjectId);
+      userToFollow.followers.push(userObjectId);
 
-    // Add to followers list of the followed user in MongoDB
-    await this.userModel.findByIdAndUpdate(
-      userToFollowId,
-      { $addToSet: { followers: userId } }
-    );
-
-    // Create follow relationship in Neo4j
-    try {
-      await this.neo4jService.createFollowRelationship(
-        userId.toString(),
-        userToFollowId.toString()
-      );
-    } catch (error) {
-      // If Neo4j operation fails, rollback MongoDB changes
-      await this.userModel.findByIdAndUpdate(
-        userId,
-        { $pull: { follows: userToFollowId } }
-      );
-      await this.userModel.findByIdAndUpdate(
-        userToFollowId,
-        { $pull: { followers: userId } }
-      );
-      throw new Error('Failed to create follow relationship in Neo4j');
+      await user.save();
+      await userToFollow.save();
     }
 
     return user;
   }
 
   async unfollowUser(userId: string, userToUnfollowId: string): Promise<UserDocument> {
-    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(userToUnfollowId)) {
-      throw new NotFoundException('Invalid user ID');
+    const user = await this.findById(userId);
+    const userToUnfollow = await this.findById(userToUnfollowId);
+
+    const userToUnfollowObjectId = new Types.ObjectId(userToUnfollowId);
+    const userObjectId = new Types.ObjectId(userId);
+
+    if (user.following) {
+      user.following = user.following.filter(id => !id.equals(userToUnfollowObjectId));
+    }
+    if (userToUnfollow.followers) {
+      userToUnfollow.followers = userToUnfollow.followers.filter(id => !id.equals(userObjectId));
     }
 
-    // Remove from follows list in MongoDB
-    const user = await this.userModel.findByIdAndUpdate(
-      userId,
-      { $pull: { follows: userToUnfollowId } },
-      { new: true }
-    ).select('-password');
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Remove from followers list of the unfollowed user in MongoDB
-    await this.userModel.findByIdAndUpdate(
-      userToUnfollowId,
-      { $pull: { followers: userId } }
-    );
-
-    // Remove follow relationship in Neo4j
-    try {
-      await this.neo4jService.removeFollowRelationship(
-        userId.toString(),
-        userToUnfollowId.toString()
-      );
-    } catch (error) {
-      // If Neo4j operation fails, rollback MongoDB changes
-      await this.userModel.findByIdAndUpdate(
-        userId,
-        { $addToSet: { follows: userToUnfollowId } }
-      );
-      await this.userModel.findByIdAndUpdate(
-        userToUnfollowId,
-        { $addToSet: { followers: userId } }
-      );
-      throw new Error('Failed to remove follow relationship in Neo4j');
-    }
+    await user.save();
+    await userToUnfollow.save();
 
     return user;
   }
 
   async getFollowers(userId: string): Promise<UserDocument[]> {
-    if (!Types.ObjectId.isValid(userId)) {
-      throw new NotFoundException('Invalid user ID');
+    const user = await this.findById(userId);
+    if (!user.followers || user.followers.length === 0) {
+      return [];
     }
-    const user = await this.userModel.findById(userId).select('followers');
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    return this.userModel.find({ _id: { $in: user.followers } }).select('-password');
+    return this.userModel.find({ _id: { $in: user.followers } }).exec();
   }
 
   async getFollowing(userId: string): Promise<UserDocument[]> {
-    if (!Types.ObjectId.isValid(userId)) {
-      throw new NotFoundException('Invalid user ID');
+    const user = await this.findById(userId);
+    if (!user.following || user.following.length === 0) {
+      return [];
     }
-    const user = await this.userModel.findById(userId).select('follows');
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    return this.userModel.find({ _id: { $in: user.follows } }).select('-password');
+    return this.userModel.find({ _id: { $in: user.following } }).exec();
   }
 
-  async updateProfilePhoto(id: string, profilePhoto: string): Promise<UserDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException('Invalid user ID');
-    }
-
-    const updatedUser = await this.userModel
-      .findByIdAndUpdate(
-        id,
-        { profilePhoto },
-        { new: true }
-      )
-      .select('-password')
-      .exec();
-
-    if (!updatedUser) {
-      throw new NotFoundException('User not found');
-    }
-
-    return updatedUser;
+  async updateProfilePhoto(userId: string, profilePhoto: string): Promise<UserDocument> {
+    const user = await this.findById(userId);
+    user.profilePhoto = profilePhoto;
+    return user.save();
   }
 }

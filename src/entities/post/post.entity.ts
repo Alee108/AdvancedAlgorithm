@@ -18,9 +18,9 @@ export class Post {
   @Prop({ required: true })
   location: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Base64 encoded image' })
   @Prop({ required: true })
-  content: string;
+  base64Image: string;
 
   @ApiProperty()
   @Prop({ type: Number, default: 0 })
@@ -42,9 +42,39 @@ export class Post {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
-  @ApiProperty()
-  @Prop([{ type: String }])
-  tags: string[];
+  @ApiProperty({
+    description: 'Metadata for the post (initially empty, will be populated by visual analyzer)',
+    example: {
+      sentiment: null,
+      keywords: [],
+      language: null,
+      category: null,
+      createdAt: null
+    }
+  })
+  @Prop({
+    type: {
+      sentiment: { type: String, enum: ['positive', 'negative', 'neutral'], default: null },
+      keywords: { type: [String], default: [] },
+      language: { type: String, default: null },
+      category: { type: String, default: null },
+      createdAt: { type: Date, default: null }
+    },
+    default: () => ({
+      sentiment: null,
+      keywords: [],
+      language: null,
+      category: null,
+      createdAt: null
+    })
+  })
+  metadata: {
+    sentiment: string | null;
+    keywords: string[];
+    language: string | null;
+    category: string | null;
+    createdAt: Date | null;
+  };
 
   createdAt: Date;
   updatedAt: Date;

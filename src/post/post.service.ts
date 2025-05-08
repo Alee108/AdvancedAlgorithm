@@ -1,25 +1,53 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Post, PostDocument } from 'src/entities/post/post.entity';
+import { Post, PostDocument } from '../entities/post/post.entity';
+import { CreatePostDto } from './post.dto';
+
+export interface CreatePostData {
+  description: string;
+  location: string;
+  base64Image: string;
+  userId: Types.ObjectId;
+}
 
 @Injectable()
 export class PostService {
   constructor(
     @InjectModel(Post.name)
-    private readonly postModel: Model<PostDocument>,
+    private readonly postModel: Model<PostDocument>
   ) {}
 
-  async create(createPostDto: Partial<Post>): Promise<PostDocument> {
-    const newPost = new this.postModel(createPostDto);
-    return newPost.save();
+  async create(createPostData: CreatePostData): Promise<PostDocument> {
+    try {
+      console.log('Creating post with data:', createPostData);
+      const createdPost = new this.postModel({
+        ...createPostData,
+        metadata: {
+          sentiment: null,
+          keywords: [],
+          language: null,
+          category: null,
+          createdAt: null
+        },
+        likes: 0,
+        comments: []
+      });
+      console.log('Created post object:', createdPost);
+      const savedPost = await createdPost.save();
+      console.log('Saved post:', savedPost);
+      return savedPost;
+    } catch (error) {
+      console.error('Error in post service create:', error);
+      throw error;
+    }
   }
 
   async findAll(): Promise<PostDocument[]> {
     return this.postModel
       .find()
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
   }
 
@@ -29,8 +57,8 @@ export class PostService {
     }
     const post = await this.postModel
       .findById(id)
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
     
     if (!post) {
@@ -43,10 +71,11 @@ export class PostService {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid post ID');
     }
+
     const updatedPost = await this.postModel
       .findByIdAndUpdate(id, updatePostDto, { new: true })
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
     
     if (!updatedPost) {
@@ -71,8 +100,8 @@ export class PostService {
     }
     const post = await this.postModel
       .findByIdAndUpdate(id, { $inc: { likes: 1 } }, { new: true })
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
     
     if (!post) {
@@ -103,8 +132,8 @@ export class PostService {
         },
         { new: true }
       )
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
 
     if (!post) {
@@ -116,8 +145,8 @@ export class PostService {
   async findByTags(tags: string[]): Promise<PostDocument[]> {
     return this.postModel
       .find({ tags: { $in: tags } })
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
   }
 
@@ -127,8 +156,8 @@ export class PostService {
     }
     return this.postModel
       .find({ userId: new Types.ObjectId(userId) })
-      .populate('userId', 'username email')
-      .populate('comments.user', 'username email')
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('comments.user', 'name surname username profilePhoto')
       .exec();
   }
 } 

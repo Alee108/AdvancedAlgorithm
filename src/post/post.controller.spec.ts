@@ -3,6 +3,9 @@ import { PostController } from './post.controller';
 import { PostService } from './post.service';
 import { Post } from 'src/entities/post/post.entity';
 import { Types } from 'mongoose';
+import { AuthGuard } from '../auth/auth.guard';
+import { ExecutionContext } from '@nestjs/common';
+import { Readable } from 'stream';
 
 describe('PostController', () => {
   let controller: PostController;
@@ -16,8 +19,20 @@ describe('PostController', () => {
     delete: jest.fn(),
     addLike: jest.fn(),
     addComment: jest.fn(),
-    findByTags: jest.fn(),
     findByUser: jest.fn(),
+  };
+
+  const mockUser = {
+    sub: new Types.ObjectId().toString(),
+    email: 'test@example.com',
+    role: 'user'
+  };
+
+  const mockRequest = {
+    user: mockUser,
+    headers: {
+      authorization: 'Bearer mock-jwt-token'
+    }
   };
 
   beforeEach(async () => {
@@ -29,7 +44,15 @@ describe('PostController', () => {
           useValue: mockPostService,
         },
       ],
-    }).compile();
+    })
+    .overrideGuard(AuthGuard)
+    .useValue({
+      canActivate: (context: ExecutionContext) => {
+        const request = context.switchToHttp().getRequest();
+        return request.headers.authorization?.startsWith('Bearer ');
+      }
+    })
+    .compile();
 
     controller = module.get<PostController>(PostController);
     service = module.get<PostService>(PostService);
@@ -40,43 +63,81 @@ describe('PostController', () => {
   });
 
   describe('create', () => {
-    it('should create a post', async () => {
-      const userId = new Types.ObjectId().toString();
+    const mockFile = {
+      fieldname: 'image',
+      originalname: 'test.jpg',
+      encoding: '7bit',
+      mimetype: 'image/jpeg',
+      destination: './uploads/posts',
+      filename: 'test.jpg',
+      path: 'uploads/posts/test.jpg',
+      size: 1234,
+      stream: new Readable(),
+      buffer: Buffer.from('test')
+    };
+
+    it('should create a post when user is authenticated', async () => {
       const postDto = {
         description: 'Test post',
         location: 'Test location',
-        content: 'Test content',
-        tags: ['test'],
+        image: mockFile
       };
-      const req = {
-        user: {
-          sub: userId
+      const expectedResult = { 
+        ...postDto, 
+        userId: mockUser.sub, 
+        _id: new Types.ObjectId(),
+        metadata: {
+          sentiment: 'neutral',
+          keywords: [],
+          language: 'en',
+          category: 'general',
+          createdAt: expect.any(Date)
         }
       };
-      const expectedResult = { ...postDto, userId, _id: new Types.ObjectId() };
 
       mockPostService.create.mockResolvedValue(expectedResult);
 
-      const result = await controller.create(postDto, req);
+      const result = await controller.create(postDto, mockFile, mockRequest);
       expect(result).toEqual(expectedResult);
       expect(mockPostService.create).toHaveBeenCalledWith({
         ...postDto,
-        userId
+        userId: new Types.ObjectId(mockUser.sub)
       });
+    });
+
+    it('should throw UnauthorizedException when no token is provided', async () => {
+      const postDto = {
+        description: 'Test post',
+        location: 'Test location',
+        image: mockFile
+      };
+      const requestWithoutToken = {
+        user: mockUser,
+        headers: {}
+      };
+
+      await expect(controller.create(postDto, mockFile, requestWithoutToken))
+        .rejects
+        .toThrow('Unauthorized');
     });
   });
 
   describe('findAll', () => {
     it('should return an array of posts', async () => {
-      const userId = new Types.ObjectId().toString();
       const expectedResult = [
         {
           _id: new Types.ObjectId(),
           description: 'Test post',
           location: 'Test location',
           content: 'Test content',
-          userId,
-          tags: ['test'],
+          userId: mockRequest.user.sub,
+          metadata: {
+            sentiment: 'neutral',
+            keywords: [],
+            language: 'en',
+            category: 'general',
+            createdAt: expect.any(Date)
+          }
         },
       ];
 
@@ -90,14 +151,19 @@ describe('PostController', () => {
 
   describe('findOne', () => {
     it('should return a single post', async () => {
-      const userId = new Types.ObjectId().toString();
       const expectedResult = {
         _id: new Types.ObjectId(),
         description: 'Test post',
         location: 'Test location',
         content: 'Test content',
-        userId,
-        tags: ['test'],
+        userId: mockRequest.user.sub,
+        metadata: {
+          sentiment: 'neutral',
+          keywords: [],
+          language: 'en',
+          category: 'general',
+          createdAt: expect.any(Date)
+        }
       };
 
       mockPostService.findOne.mockResolvedValue(expectedResult);
@@ -109,23 +175,43 @@ describe('PostController', () => {
   });
 
   describe('update', () => {
+    const mockFile = {
+      fieldname: 'image',
+      originalname: 'test.jpg',
+      encoding: '7bit',
+      mimetype: 'image/jpeg',
+      destination: './uploads/posts',
+      filename: 'test.jpg',
+      path: 'uploads/posts/test.jpg',
+      size: 1234,
+      stream: new Readable(),
+      buffer: Buffer.from('test')
+    };
+
     it('should update a post', async () => {
       const postId = new Types.ObjectId().toString();
       const updateDto = {
         description: 'Updated post',
         location: 'Updated location',
+        image: mockFile
       };
       const expectedResult = {
         _id: postId,
         ...updateDto,
         content: 'Test content',
-        userId: new Types.ObjectId().toString(),
-        tags: ['test'],
+        userId: mockRequest.user.sub,
+        metadata: {
+          sentiment: 'neutral',
+          keywords: [],
+          language: 'en',
+          category: 'general',
+          createdAt: expect.any(Date)
+        }
       };
 
       mockPostService.update.mockResolvedValue(expectedResult);
 
-      const result = await controller.update(postId, updateDto);
+      const result = await controller.update(postId, updateDto, mockFile);
       expect(result).toEqual(expectedResult);
       expect(mockPostService.update).toHaveBeenCalledWith(postId, updateDto);
     });
@@ -139,8 +225,14 @@ describe('PostController', () => {
         description: 'Test post',
         location: 'Test location',
         content: 'Test content',
-        userId: new Types.ObjectId().toString(),
-        tags: ['test'],
+        userId: mockRequest.user.sub,
+        metadata: {
+          sentiment: 'neutral',
+          keywords: [],
+          language: 'en',
+          category: 'general',
+          createdAt: expect.any(Date)
+        }
       };
 
       mockPostService.delete.mockResolvedValue(expectedResult);
@@ -170,55 +262,27 @@ describe('PostController', () => {
   describe('addComment', () => {
     it('should add a comment to a post', async () => {
       const postId = new Types.ObjectId();
-      const userId = new Types.ObjectId().toString();
       const commentData = {
         text: 'Test comment',
-      };
-      const req = {
-        user: {
-          sub: userId
-        }
       };
       const expectedResult = {
         _id: postId,
         comments: [{
           text: commentData.text,
-          user: userId,
+          user: mockRequest.user.sub,
           createdAt: expect.any(Date)
         }],
       };
 
       mockPostService.addComment.mockResolvedValue(expectedResult);
 
-      const result = await controller.addComment(postId.toString(), commentData, req);
+      const result = await controller.addComment(postId.toString(), commentData, mockRequest);
       expect(result).toEqual(expectedResult);
       expect(mockPostService.addComment).toHaveBeenCalledWith(
         postId.toString(),
-        userId,
+        mockRequest.user.sub,
         commentData.text,
       );
-    });
-  });
-
-  describe('findByTags', () => {
-    it('should return posts by tags', async () => {
-      const tags = 'test,photo';
-      const expectedResult = [
-        {
-          _id: new Types.ObjectId(),
-          description: 'Test post',
-          location: 'Test location',
-          content: 'Test content',
-          userId: new Types.ObjectId().toString(),
-          tags: ['test', 'photo'],
-        },
-      ];
-
-      mockPostService.findByTags.mockResolvedValue(expectedResult);
-
-      const result = await controller.findByTags(tags);
-      expect(result).toEqual(expectedResult);
-      expect(mockPostService.findByTags).toHaveBeenCalledWith(['test', 'photo']);
     });
   });
 
@@ -232,7 +296,13 @@ describe('PostController', () => {
           location: 'Test location',
           content: 'Test content',
           userId,
-          tags: ['test'],
+          metadata: {
+            sentiment: 'neutral',
+            keywords: [],
+            language: 'en',
+            category: 'general',
+            createdAt: expect.any(Date)
+          }
         },
       ];
 
