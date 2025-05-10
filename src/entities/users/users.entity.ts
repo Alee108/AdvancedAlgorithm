@@ -15,6 +15,11 @@ export enum Gender {
   Other = "other"
 }
 
+export enum Visibility {
+  Public = 'public',
+  Private = 'private'
+}
+
 export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
@@ -88,6 +93,10 @@ export class User {
   })
   @Prop({ type: String, enum: Role, default: Role.User })
   role: Role;
+
+  @ApiProperty({ description: 'User visibility', enum: Visibility })
+  @Prop({ required: true, enum: Visibility, default: Visibility.Public })
+  visibility: Visibility;
 
   @ApiProperty({ description: 'When the user was created' })
   createdAt: Date;
