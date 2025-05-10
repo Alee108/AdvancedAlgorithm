@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Post, PostDocument } from '../entities/post/post.entity';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
+import sharp from 'sharp';
 
 export interface CreatePostData {
   description: string;
@@ -18,9 +19,26 @@ export class PostService {
     private readonly postModel: Model<PostDocument>
   ) {}
 
-  async create(createPostDto: CreatePostDto): Promise<PostDocument> {
-    const newPost = new this.postModel(createPostDto);
-    return newPost.save();
+  async create(createPostData: CreatePostData): Promise<PostDocument> {
+    try {
+      const createdPost = new this.postModel({
+        ...createPostData,
+        metadata: {
+          sentiment: null,
+          keywords: [],
+          language: null,
+          category: null,
+          createdAt: null
+        },
+        likes: 0,
+        comments: []
+      });
+      const savedPost = await createdPost.save();
+      return savedPost;
+    } catch (error) {
+      console.error('Error in post service create:', error);
+      throw error;
+    }
   }
 
   async findAll(): Promise<PostDocument[]> {
@@ -126,4 +144,7 @@ export class PostService {
       .populate('comments')
       .exec();
   }
+
+
+
 } 

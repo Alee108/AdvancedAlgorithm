@@ -90,7 +90,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Follow a user' })
   @ApiResponse({ status: 200, description: 'Successfully followed user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  followUser(@Param('id') userToFollowId: string, @Req() req: any) {
+  followUser(@Param('id') userToFollowId: string, @Req() req: any): Promise<UserDocument> {
     return this.usersService.followUser(req.user.sub, userToFollowId);
   }
 

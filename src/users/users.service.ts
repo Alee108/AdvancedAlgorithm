@@ -15,7 +15,9 @@ export class UsersService {
 
   async create(createUserData: CreateUserData): Promise<UserDocument> {
     const createdUser = new this.userModel(createUserData);
-    return createdUser.save();
+    const user = await createdUser.save();
+    await this.neo4jService.createUser(user._id.toString(), user.username, user.name, user.surname);
+    return user
   }
 
   async findAll(): Promise<UserDocument[]> {
@@ -76,7 +78,7 @@ export class UsersService {
       await user.save();
       await userToFollow.save();
     }
-
+    this.neo4jService.createFollowRelationship(userId, userToFollowId);
     return user;
   }
 

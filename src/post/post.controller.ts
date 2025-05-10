@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile, Inject, Req } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CommentsService } from '../comments/comments.service';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
@@ -8,10 +8,12 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
 import { Types } from 'mongoose';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 import { CreatePostData } from './post.service';
+import { ClientKafka } from '@nestjs/microservices';
+import sharp from 'sharp';
 
 @ApiTags('posts')
 @ApiBearerAuth()
@@ -20,7 +22,9 @@ import { CreatePostData } from './post.service';
 export class PostController {
   constructor(
     private readonly postService: PostService,
-    private readonly commentsService: CommentsService
+    private readonly commentsService: CommentsService,
+    @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka
+
   ) {}
 
   @Post()
@@ -30,51 +34,48 @@ export class PostController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('image', {
-      storage: diskStorage({
-        destination: './uploads/posts',
-        filename: (req, file, callback) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          callback(null, `${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
       fileFilter: (req, file, callback) => {
         if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
           return callback(new Error('Only image files are allowed!'), false);
         }
         callback(null, true);
       },
+      limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
+  
   async create(
     @Body() createPostDto: CreatePostDto,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any
   ) {
     try {
-      let base64Image: string | null = null;
-      
-      if (file) {
-        // Read the file and convert to base64
-        const imageBuffer = fs.readFileSync(file.path);
-        base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
-
-        // Delete the temporary file
-        fs.unlinkSync(file.path);
+      if (!file) {
+        throw new Error('Image file is required');
       }
 
+      // Read the file and convert to base64
+      const imageBuffer = fs.readFileSync(file.path);
+      const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
+
+      // Delete the temporary file
+      fs.unlinkSync(file.path);
+
+      // Create post with base64 image
       const postData = {
         ...createPostDto,
         base64Image,
-        userId: req.user.sub
+        userId: new Types.ObjectId(req.user.sub)
       };
 
-      return this.postService.create(postData);
+      return await this.postService.create(postData);
     } catch (error) {
       console.error('Error creating post:', error);
       throw error;
     }
   }
-
+  
   @Get()
   @Public()
   @ApiOperation({ summary: 'Get all posts' })
