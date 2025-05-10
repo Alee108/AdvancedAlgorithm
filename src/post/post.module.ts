@@ -5,6 +5,7 @@ import { PostController } from './post.controller';
 import { PostService } from './post.service';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CommentsModule } from 'src/comments/comments.module';
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           },
         }),
       },
-    ])
+    ]),
+    CommentsModule
   ],
   controllers: [PostController],
   providers: [PostService],

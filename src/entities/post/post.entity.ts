@@ -23,24 +23,16 @@ export class Post {
   base64Image: string;
 
   @ApiProperty()
-  @Prop({ type: Number, default: 0 })
-  likes: number;
-
-  @ApiProperty()
-  @Prop([{
-    text: { type: String, required: true },
-    user: { type: Types.ObjectId, ref: 'User', required: true },
-    createdAt: { type: Date, default: Date.now }
-  }])
-  comments: Array<{
-    text: string;
-    user: Types.ObjectId;
-    createdAt: Date;
-  }>;
-
-  @ApiProperty()
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
+
+  @ApiProperty()
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  likes: Types.ObjectId[];
+
+  @ApiProperty()
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Comment' }], default: [] })
+  comments: Types.ObjectId[];
 
   @ApiProperty({
     description: 'Metadata for the post (initially empty, will be populated by visual analyzer)',
