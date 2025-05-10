@@ -21,6 +21,7 @@ dotenv.config();
     ChatModule,
     PostModule,
     RedisModule,
+    
   ],
 })
 export class AppModule {}
