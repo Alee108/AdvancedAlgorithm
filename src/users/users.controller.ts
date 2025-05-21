@@ -9,6 +9,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
+import { UserDocument } from 'src/entities/users/users.entity';
 
 @ApiTags('users')
 @Controller('users')
