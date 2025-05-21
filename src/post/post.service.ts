@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException,Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Post, PostDocument } from '../entities/post/post.entity';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
 import sharp from 'sharp';
+import { ClientKafka } from '@nestjs/microservices';
 
 export interface CreatePostData {
   description: string;
@@ -16,7 +17,9 @@ export interface CreatePostData {
 export class PostService {
   constructor(
     @InjectModel(Post.name)
-    private readonly postModel: Model<PostDocument>
+    private readonly postModel: Model<PostDocument>,
+    @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka,
+    
   ) {}
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
@@ -30,8 +33,7 @@ export class PostService {
           category: null,
           createdAt: null
         },
-        likes: 0,
-        comments: []
+
       });
       const savedPost = await createdPost.save();
       return savedPost;
@@ -101,6 +103,15 @@ export class PostService {
         post.likes.push(userObjectId);
         return post.save();
       }
+  
+      // Invia a Kafka
+      this.kafkaClient.emit('user-interaction-topic', JSON.stringify({
+        userId,
+        tag:post.metadata.keywords,
+        interactionType: 'LIKE',
+        timestamp: Date.now(),
+      }));
+  
 
       return post;
     } catch (error) {
@@ -148,3 +159,11 @@ export class PostService {
 
 
 } 
+
+
+interface UserInteractionEvent {
+  userId: string;
+  tag: string;
+  interactionType: 'LIKE' | 'COMMENT' | 'HIDE' | 'DISLIKE';
+  timestamp: number;
+}

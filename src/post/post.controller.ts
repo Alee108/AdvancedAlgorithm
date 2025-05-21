@@ -26,7 +26,6 @@ export class PostController {
     @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka
 
   ) {}
-
   @Post()
   @ApiOperation({ summary: 'Create a new post' })
   @ApiResponse({ status: 201, description: 'Post created successfully' })
@@ -41,40 +40,45 @@ export class PostController {
         }
         callback(null, true);
       },
-      limits: { fileSize: 5 * 1024 * 1024 },
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
     }),
   )
-  
   async create(
     @Body() createPostDto: CreatePostDto,
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: any
+    @Req() req: any,
   ) {
     try {
       if (!file) {
         throw new Error('Image file is required');
       }
-
-      // Read the file and convert to base64
-      const imageBuffer = fs.readFileSync(file.path);
-      const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
-
-      // Delete the temporary file
-      fs.unlinkSync(file.path);
-
-      // Create post with base64 image
+  
+      // Convert in-memory buffer to base64 string
+      const base64Image = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  
+      // Create post with base64 image and user ID
       const postData = {
         ...createPostDto,
         base64Image,
-        userId: new Types.ObjectId(req.user.sub)
+        userId: new Types.ObjectId(req.user.sub),
       };
-
-      return await this.postService.create(postData);
+  
+      const img = await this.postService.create(postData);
+  
+      // Send image data to Kafka
+      this.kafkaClient.emit('photo-upload', JSON.stringify({
+        userId: req.user.sub,
+        photoId: img.id,
+        imageUrl: img.base64Image,
+      }));
+  
+      return img;
     } catch (error) {
       console.error('Error creating post:', error);
       throw error;
     }
   }
+  
   
   @Get()
   @Public()
