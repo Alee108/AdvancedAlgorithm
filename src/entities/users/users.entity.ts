@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { Membership } from '../membership/membership.entity';
+import { Tribe } from '../tribe/tribe.entity';
 // import { ServiceProviders } from './service-providers.entity';
 
 export enum Role {
@@ -103,6 +105,14 @@ export class User {
 
   @ApiProperty({ description: 'When the user was last updated' })
   updatedAt: Date;
+
+  @ApiProperty({ description: 'User memberships' })
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Membership' }] })
+  memberships: Membership[];
+
+  @ApiProperty({ description: 'Tribes founded by the user' })
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Tribe' }] })
+  foundedTribes: Tribe[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

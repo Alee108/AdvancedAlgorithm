@@ -8,6 +8,8 @@ import { ConfigModule } from '@nestjs/config';
 import { RedisModule } from './redis/redis.module';
 import { PostModule } from './post/post.module';
 import { CommentsModule } from './comments/comments.module';
+import { NestController } from './generate/nest/nest.controller';
+import { TribeModule } from './tribe/tribe.module';
 
 dotenv.config();
 
@@ -22,7 +24,9 @@ dotenv.config();
     ChatModule,
     PostModule,
     RedisModule,
-    CommentsModule
+    CommentsModule,
+    TribeModule
   ],
+  controllers: [NestController],
 })
 export class AppModule {}

@@ -29,6 +29,7 @@
     "@nestjs/platform-express": "^11.1.0",
     "@nestjs/platform-socket.io": "^11.0.12",
     "@nestjs/swagger": "^11.0.7",
+    "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.0.12",
     "@types/bcrypt": "^5.0.2",
     "@types/multer": "^1.4.12",
@@ -49,7 +50,8 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.34.1",
     "socket.io": "^4.8.1",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "typeorm": "^0.3.24"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
