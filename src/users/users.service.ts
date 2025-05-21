@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
 import { CreateUserData, UpdateUserData } from './users.dto';
+import { UpdateVisibilityDto } from './dto/update-visibility.dto';
 
 @Injectable()
 export class UsersService {
@@ -121,5 +122,28 @@ export class UsersService {
     const user = await this.findById(userId);
     user.profilePhoto = profilePhoto;
     return user.save();
+  }
+
+  async updateVisibility(userId: string, updateVisibilityDto: UpdateVisibilityDto) {
+    try {
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new BadRequestException('Invalid user ID');
+      }
+
+      const updatedUser = await this.userModel.findOneAndUpdate(
+        { _id: new Types.ObjectId(userId) },
+        { $set: { visibility: updateVisibilityDto.visibility } },
+        { new: true, select: '-password' }
+      );
+
+      if (!updatedUser) {
+        throw new NotFoundException('User not found');
+      }
+
+      return updatedUser;
+    } catch (error) {
+      console.error('Error updating visibility:', error);
+      throw error;
+    }
   }
 }

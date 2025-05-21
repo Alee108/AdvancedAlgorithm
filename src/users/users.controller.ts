@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { UpdateUserDto, UpdateUserData } from './users.dto';
+import { UpdateUserDto } from './users.dto';
+import { UpdateVisibilityDto } from './dto/update-visibility.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
-import { User, UserDocument } from '../entities/users/users.entity';
+import { Public } from '../auth/decorators/public.decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -11,30 +12,29 @@ import * as fs from 'fs';
 
 @ApiTags('users')
 @Controller('users')
+@UseGuards(AuthGuard)
+@ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
+  @Public()
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'Return all users.' })
-  findAll(): Promise<UserDocument[]> {
+  findAll() {
     return this.usersService.findAll();
   }
 
   @Get(':id')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
+  @Public()
   @ApiOperation({ summary: 'Get a user by id' })
   @ApiResponse({ status: 200, description: 'Return the user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  findOne(@Param('id') id: string): Promise<UserDocument> {
+  findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
 
   @Patch(':id')
-  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Update a user' })
   @ApiResponse({ status: 200, description: 'User updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -60,18 +60,14 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @UploadedFile() file: Express.Multer.File
-  ): Promise<UserDocument> {
+  ) {
     try {
       const { profilePhoto, ...updateData } = updateUserDto;
 
       if (file) {
-        // Read the file and convert to base64
         const imageBuffer = fs.readFileSync(file.path);
         const base64ProfilePhoto = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
-
-        // Delete the temporary file
         fs.unlinkSync(file.path);
-
         return this.usersService.update(id, { ...updateData, profilePhoto: base64ProfilePhoto });
       }
 
@@ -83,66 +79,86 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a user' })
   @ApiResponse({ status: 200, description: 'User successfully deleted.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  remove(@Param('id') id: string): Promise<void> {
+  remove(@Param('id') id: string) {
     return this.usersService.delete(id);
   }
 
   @Post(':id/follow')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Follow a user' })
   @ApiResponse({ status: 200, description: 'Successfully followed user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
   followUser(@Param('id') userToFollowId: string, @Req() req: any): Promise<UserDocument> {
-    console.log('User ID:', req.user.sub,'\nFollowing User ID:', userToFollowId);
     return this.usersService.followUser(req.user.sub, userToFollowId);
   }
 
   @Post(':id/unfollow')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Unfollow a user' })
   @ApiResponse({ status: 200, description: 'Successfully unfollowed user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  unfollowUser(@Param('id') userToUnfollowId: string, @Req() req: any): Promise<UserDocument> {
+  unfollowUser(@Param('id') userToUnfollowId: string, @Req() req: any) {
     return this.usersService.unfollowUser(req.user.sub, userToUnfollowId);
   }
 
   @Get(':id/followers')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
+  @Public()
   @ApiOperation({ summary: 'Get user followers' })
   @ApiResponse({ status: 200, description: 'Return user followers.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  getFollowers(@Param('id') id: string): Promise<UserDocument[]> {
+  getFollowers(@Param('id') id: string) {
     return this.usersService.getFollowers(id);
   }
 
   @Get(':id/following')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
+  @Public()
   @ApiOperation({ summary: 'Get users that the user is following' })
   @ApiResponse({ status: 200, description: 'Return following users.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  getFollowing(@Param('id') id: string): Promise<UserDocument[]> {
+  getFollowing(@Param('id') id: string) {
     return this.usersService.getFollowing(id);
   }
 
   @Patch(':id/profile-photo')
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user profile photo' })
   @ApiResponse({ status: 200, description: 'Profile photo successfully updated.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
   updateProfilePhoto(
     @Param('id') id: string,
     @Body('profilePhoto') profilePhoto: string
-  ): Promise<UserDocument> {
+  ) {
     return this.usersService.updateProfilePhoto(id, profilePhoto);
+  }
+
+  @Patch('me/visibility')
+  @ApiOperation({ summary: 'Update current user visibility' })
+  @ApiResponse({ status: 200, description: 'Visibility updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  async updateVisibility(
+    @Body() updateVisibilityDto: UpdateVisibilityDto,
+    @Req() req: any
+  ) {
+    try {
+      if (!req.user || !req.user.sub) {
+        throw new UnauthorizedException('User not authenticated');
+      }
+
+      console.log('Updating visibility for user:', req.user.sub);
+      console.log('New visibility:', updateVisibilityDto.visibility);
+
+      const result = await this.usersService.updateVisibility(
+        req.user.sub.toString(),
+        updateVisibilityDto
+      );
+      
+      console.log('Update result:', result);
+      return result;
+    } catch (error) {
+      console.error('Error in updateVisibility controller:', error);
+      throw error;
+    }
   }
 }
