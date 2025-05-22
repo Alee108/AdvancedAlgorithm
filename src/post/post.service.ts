@@ -222,6 +222,31 @@ export class PostService {
     }
     return user.following || [];
   }
+
+   async getAllPostsByTribeWithFilters(tribeId:string, filters: 'most_recent'| 'most_liked'| 'most_commented'):Promise<PostDocument[]> {
+    let sortCriteria: any;
+    switch (filters) {
+      case 'most_recent':
+        sortCriteria = { createdAt: -1 };
+        break;
+      case 'most_liked':
+        sortCriteria = { likes: -1 };
+        break;
+      case 'most_commented':
+        sortCriteria = { comments: -1 };
+        break;
+      default:
+        throw new BadRequestException('Invalid filter');
+    }
+    return this.postModel
+      .find({ tribeId, archived: false })
+      .sort(sortCriteria)
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
+      .populate('comments')
+      .exec();
+  }
+  
 }
 
 interface UserInteractionEvent {

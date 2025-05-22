@@ -5,6 +5,7 @@ import { Membership, MembershipDocument, MembershipStatus } from 'src/entities/m
 import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { identity } from 'rxjs';
 import { TribeService } from 'src/tribe/tribe.service';
+import e from 'express';
 
 @Injectable()
 export class MembershipService {
@@ -79,5 +80,21 @@ export class MembershipService {
         const updatedMembership = await membership.save();
         return updatedMembership;
     }
+
+    async deleteMembership(id: string): Promise<string> {
+        const membership = await this.membershipModel.findById(id).exec();
+        if (!membership) {
+          throw new NotFoundException(`Membership with ID ${id} not found`);
+        }
+        if(membership.status !== MembershipStatus.PENDING) {
+        await this.membershipModel.deleteOne({ _id: id }).exec();
+        
+        }else {
+            throw new NotFoundException(`Membership with ID ${id} is not pending`);
+        }
+
+        return "Membership deleted successfully";
+      }
+
 
 }

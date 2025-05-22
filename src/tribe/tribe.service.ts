@@ -175,6 +175,23 @@ export class TribeService {
         throw new NotFoundException('Tribe not found after update');
       }
 
+      // Check if the tribe is private
+      if (updatedTribe.visibility === 'PUBLIC') {
+        // get all the pending requests and update their status to ACTIVE
+        const pendingMemberships = await this.membershipModel.find({
+          tribe: new Types.ObjectId(tribeId),
+          status: MembershipStatus.PENDING
+        });
+        if (pendingMemberships.length > 0) {
+          for (const membership of pendingMemberships) {
+            membership.status = MembershipStatus.ACTIVE;
+            await membership.save();
+  
+            tribe.memberships.push(membership);
+            await tribe.save();
+          }
+        }     
+      }
       return updatedTribe;
     } catch (error) {
       console.error('Error in update tribe visibility service:', error);
@@ -254,6 +271,17 @@ export class TribeService {
       membership.user._id.toString() === moderatorId)) {
       throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
+
+    //check if the user has active membership
+    const activeMembership = await this.membershipModel.find({
+      user: new Types.ObjectId(userId),
+      status: MembershipStatus.ACTIVE
+    });
+
+    if (activeMembership.length > 0) {
+      throw new BadRequestException('You are already a member of a tribe');
+    }
+    
     
 
     const membership = await this.membershipModel.findOne({

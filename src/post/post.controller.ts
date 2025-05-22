@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import { CreatePostData } from './post.service';
 import { ClientKafka } from '@nestjs/microservices';
 import sharp from 'sharp';
+import { FilterPostDto } from './dto/post.filter.dto';
 
 @ApiTags('posts')
 @ApiBearerAuth()
@@ -78,16 +79,7 @@ export class PostController {
     }
   }
   
-  @Get()
-  @ApiOperation({ summary: 'Get all posts' })
-  @ApiResponse({ status: 200, description: 'Return all posts' })
-  @ApiQuery({ name: 'tribeId', required: false, description: 'Filter posts by tribe ID' })
-  findAll(@Query('tribeId') tribeId?: string) {
-    if (tribeId) {
-      return this.postService.findByTribe(tribeId);
-    }
-    return this.postService.findAll();
-  }
+
 
   @Get('home')
   @ApiOperation({ summary: 'Get home feed - posts from followed users' })
@@ -185,5 +177,25 @@ export class PostController {
   @ApiResponse({ status: 200, description: 'Return all posts by the user' })
   findByUser(@Param('userId') userId: string) {
     return this.postService.findByUser(userId);
+  }
+
+
+  @Get('tribe/:tribeId')
+  @ApiOperation({ summary: 'Get all posts by tribe' })
+  @ApiResponse({ status: 200, description: 'Return all posts by tribe' })
+  findByTribe(@Param('tribeId') tribeId: string) {
+    return this.postService.findByTribe(tribeId);
+  }
+
+  //get all posts by tribe with filters (most recent, most liked, most commented)
+  @Get('tribe/:tribeId/filter')
+  @ApiOperation({ summary: 'Get all posts by tribe with filters' })
+  @ApiResponse({ status: 200, description: 'Return all posts by tribe with filters' })
+  @ApiQuery({ name: 'filter', required: true, enum: ['most_recent', 'most_liked', 'most_commented'] })
+  getAllPostsByTribeWithFilters(
+    @Param('tribeId') tribeId: string,
+    @Body('filter') filter: FilterPostDto
+  ) {
+    return this.postService.getAllPostsByTribeWithFilters(tribeId, filter.filter);
   }
 } 

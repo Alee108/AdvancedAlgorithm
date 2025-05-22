@@ -97,4 +97,12 @@ export class MermbershipController {
   }
 
 
+  //remove pending request
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a pending membership' })
+  @ApiResponse({ status: 200, description: 'Membership deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Membership not found' })
+  remove(@Param('id') id: string) {
+    return this.membershipService.deleteMembership(id);
+  }
 }
