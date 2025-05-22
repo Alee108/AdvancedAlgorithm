@@ -81,7 +81,7 @@ export class PostController {
   
   
   @Get()
-  @Public()
+
   @ApiOperation({ summary: 'Get all posts' })
   @ApiResponse({ status: 200, description: 'Return all posts' })
   findAll() {
@@ -89,7 +89,7 @@ export class PostController {
   }
 
   @Get(':id')
-  @Public()
+
   @ApiOperation({ summary: 'Get a post by id' })
   @ApiResponse({ status: 200, description: 'Return the post' })
   findOne(@Param('id') id: string) {
@@ -179,7 +179,7 @@ export class PostController {
   }
 
   @Get('user/:userId')
-  @Public()
+
   @ApiOperation({ summary: 'Get all posts by a user' })
   @ApiResponse({ status: 200, description: 'Return all posts by the user' })
   findByUser(@Param('userId') userId: string) {

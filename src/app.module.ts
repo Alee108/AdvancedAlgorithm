@@ -9,6 +9,7 @@ import { RedisModule } from './redis/redis.module';
 import { PostModule } from './post/post.module';
 import { CommentsModule } from './comments/comments.module';
 import { TribeModule } from './tribe/tribe.module';
+import { MembershipModule } from './membership/membership.module';
 
 dotenv.config();
 
@@ -24,7 +25,8 @@ dotenv.config();
     PostModule,
     RedisModule,
     CommentsModule,
-    TribeModule
+    TribeModule,
+    MembershipModule
   ],
   controllers: [],
 })

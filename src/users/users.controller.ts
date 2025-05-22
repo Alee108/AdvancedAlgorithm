@@ -19,7 +19,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Public()
+
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'Return all users.' })
   findAll() {
@@ -27,7 +27,7 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Public()
+
   @ApiOperation({ summary: 'Get a user by id' })
   @ApiResponse({ status: 200, description: 'Return the user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
@@ -104,7 +104,7 @@ export class UsersController {
   }
 
   @Get(':id/followers')
-  @Public()
+
   @ApiOperation({ summary: 'Get user followers' })
   @ApiResponse({ status: 200, description: 'Return user followers.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
@@ -113,7 +113,7 @@ export class UsersController {
   }
 
   @Get(':id/following')
-  @Public()
+
   @ApiOperation({ summary: 'Get users that the user is following' })
   @ApiResponse({ status: 200, description: 'Return following users.' })
   @ApiResponse({ status: 404, description: 'User not found.' })

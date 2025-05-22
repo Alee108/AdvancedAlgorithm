@@ -10,23 +10,17 @@ import { User } from 'src/entities/users/users.entity';
 export class CreateMembershipDto {
   @ApiProperty({ description: 'User who wants to enter' })
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  user: User;
+  user: Types.ObjectId;
   @ApiProperty({ description: 'Tribe the user is a member of' })
   @Prop({ type: Types.ObjectId, ref: 'Tribe', required: true })
-  tribe: Tribe;
+  tribe: Types.ObjectId;
 
   @ApiProperty({ 
     description: 'Status of the membership',
     enum: MembershipStatus,
     example: MembershipStatus.ACTIVE
   })
-  @Prop({ 
-    type: String, 
-    enum: MembershipStatus, 
-    required: true,
-    default: MembershipStatus.PENDING
-  })
-  status: MembershipStatus;
+
 
   @ApiProperty({ description: 'When the user joined the tribe' })
   joinedAt: Date;
@@ -36,11 +30,9 @@ export class CreateMembershipDto {
 
 }
 export interface CreateMembershipDto {
-  user: User;
-  tribe: Tribe;
-  status: MembershipStatus;
-  joinedAt: Date;
-  leftAt?: Date;
+  user: Types.ObjectId;
+  tribe: Types.ObjectId;
+  status?: MembershipStatus;
 }
 
 export interface UpdateMembershipDto {

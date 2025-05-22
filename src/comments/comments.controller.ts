@@ -3,7 +3,6 @@ import { CommentsService } from './comments.service';
 import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
-import { Public } from '../auth/decorators/public.decorators';
 
 @ApiTags('comments')
 @Controller('comments')
@@ -21,7 +20,6 @@ export class CommentsController {
   }
 
   @Get()
-  @Public()
   @ApiOperation({ summary: 'Get all comments' })
   @ApiResponse({ status: 200, description: 'Return all comments' })
   findAll() {
@@ -29,7 +27,6 @@ export class CommentsController {
   }
 
   @Get(':id')
-  @Public()
   @ApiOperation({ summary: 'Get a comment by id' })
   @ApiResponse({ status: 200, description: 'Return the comment' })
   @ApiResponse({ status: 404, description: 'Comment not found' })
@@ -60,7 +57,7 @@ export class CommentsController {
   }
 
   @Get('post/:postId')
-  @Public()
+
   @ApiOperation({ summary: 'Get all comments for a post' })
   @ApiResponse({ status: 200, description: 'Return all comments for the post' })
   findByPost(@Param('postId') postId: string) {
@@ -68,7 +65,7 @@ export class CommentsController {
   }
 
   @Get('user/:userId')
-  @Public()
+
   @ApiOperation({ summary: 'Get all comments by a user' })
   @ApiResponse({ status: 200, description: 'Return all comments by the user' })
   findByUser(@Param('userId') userId: string) {

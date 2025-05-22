@@ -4,8 +4,9 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
 import { MembershipService } from './membership.service';
-import { UpdateMembershipDto } from './DTO/membership.dto';
+import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { MembershipStatus } from 'src/entities/membership/membership.entity';
+import { Create } from 'sharp';
 
 @ApiTags('membership')
 @Controller('membership')
@@ -15,7 +16,7 @@ export class MermbershipController {
   constructor(private readonly membershipService: MembershipService) {}
 
   @Get()
-  @Public()
+
   @ApiOperation({ summary: 'Get all memberships' })
   @ApiResponse({ status: 200, description: 'Return all memberships.' })
   findAll() {
@@ -23,7 +24,7 @@ export class MermbershipController {
   }
 
   @Get(':id')
-  @Public()
+
   @ApiOperation({ summary: 'Get a membership by id' })
   @ApiResponse({ status: 200, description: 'Return the membership.' })
   @ApiResponse({ status: 404, description: 'Membership not found.' })
@@ -93,6 +94,25 @@ export class MermbershipController {
     @Param('tribeId') tribeId: string
   ) {
     return this.membershipService.exitFromTribe(userId, tribeId);
+  }
+
+  @Post('')
+  @ApiOperation({ summary: 'Create a new membership' })
+  @ApiResponse({ status: 201, description: 'Membership created successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 404, description: 'Tribe not found' })
+  @ApiResponse({ status: 409, description: 'Membership already exists' })
+  async create(
+    @Body() createMembershipDto: CreateMembershipDto,
+    @Req() req: any
+  ) {
+    try {
+      return this.membershipService.create(createMembershipDto);
+    } catch (error) {
+      console.error('Error creating membership:', error);
+      throw error;
+    }
   }
 
 }

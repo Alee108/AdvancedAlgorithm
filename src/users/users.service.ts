@@ -16,7 +16,7 @@ export class UsersService {
   async create(createUserData: CreateUserData): Promise<UserDocument> {
     const createdUser = new this.userModel(createUserData);
     const user = await createdUser.save();
-    await this.neo4jService.createUser(user._id.toString(), user.username, user.name, user.surname);
+    //await this.neo4jService.createUser(user._id.toString(), user.username, user.name, user.surname);
     return user
   }
 
