@@ -96,23 +96,5 @@ export class MermbershipController {
     return this.membershipService.exitFromTribe(userId, tribeId);
   }
 
-  @Post('')
-  @ApiOperation({ summary: 'Create a new membership' })
-  @ApiResponse({ status: 201, description: 'Membership created successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 400, description: 'Bad Request' })
-  @ApiResponse({ status: 404, description: 'Tribe not found' })
-  @ApiResponse({ status: 409, description: 'Membership already exists' })
-  async create(
-    @Body() createMembershipDto: CreateMembershipDto,
-    @Req() req: any
-  ) {
-    try {
-      return this.membershipService.create(createMembershipDto);
-    } catch (error) {
-      console.error('Error creating membership:', error);
-      throw error;
-    }
-  }
 
 }

@@ -3,6 +3,7 @@ import { TribeService } from './tribe.service';
 import { CreateTribeDto } from './dto/create-tribe.dto';
 import { UpdateTribeDto } from './dto/update-tribe.dto';
 import { UpdateTribeVisibilityDto } from './dto/update-tribe-visibility.dto';
+import { HandleMembershipRequestDto } from './dto/handle-membership-request.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -10,6 +11,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 import { Tribe } from '../entities/tribe/tribe.entity';
+import { Membership } from '../entities/membership/membership.entity';
 
 @ApiTags('tribes')
 @Controller('tribes')
@@ -204,5 +206,111 @@ export class TribeController {
       console.error('Error finding tribe:', error);
       throw error;
     }
+  }
+
+  @Patch(':tribeId/membership/:userId')
+  @ApiOperation({ summary: 'Handle a membership request' })
+  @ApiResponse({ status: 200, description: 'Membership request handled successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe or membership request not found.' })
+  async handleMembershipRequest(
+    @Param('tribeId') tribeId: string,
+    @Param('userId') userId: string,
+    @Body() handleMembershipRequestDto: HandleMembershipRequestDto,
+    @Req() req: any
+  ): Promise<Membership> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.handleMembershipRequest(
+      tribeId,
+      userId,
+      handleMembershipRequestDto.action,
+      req.user.sub
+    );
+  }
+
+  @Patch(':tribeId/members/:userId/promote')
+  @ApiOperation({ summary: 'Promote a member to moderator' })
+  @ApiResponse({ status: 200, description: 'Member promoted successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe or member not found.' })
+  async promoteToModerator(
+    @Param('tribeId') tribeId: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ): Promise<Membership> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.upgradeToModerator(tribeId, userId, req.user.sub);
+  }
+
+  @Get(':tribeId/members')
+  @ApiOperation({ summary: 'Get all tribe members' })
+  @ApiResponse({ status: 200, description: 'Returns list of tribe members.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  async getTribeMembers(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ): Promise<Membership[]> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.getTribeMembers(tribeId, req.user.sub);
+  }
+
+  @Get(':tribeId/pending-requests')
+  @ApiOperation({ summary: 'Get pending membership requests' })
+  @ApiResponse({ status: 200, description: 'Returns list of pending membership requests.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  async getPendingRequests(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ): Promise<Membership[]> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.getPendingRequests(tribeId, req.user.sub);
+  }
+
+  @Post(':tribeId/join')
+  @ApiOperation({ summary: 'Request to join a tribe' })
+  @ApiResponse({ status: 201, description: 'Join request created successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  async requestJoin(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ): Promise<Membership> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.requestJoin(tribeId, req.user.sub);
+  }
+
+  @Get(':tribeId/posts')
+  @ApiOperation({ summary: 'Get all posts from a tribe' })
+  @ApiResponse({ status: 200, description: 'Returns list of posts from the tribe.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden - You do not have permission to view posts in this tribe.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  async getAllPostsByTribe(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ) {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.getAllPostsByTribe(tribeId, req.user.sub);
   }
 }

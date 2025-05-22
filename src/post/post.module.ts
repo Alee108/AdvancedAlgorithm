@@ -6,11 +6,17 @@ import { PostService } from './post.service';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CommentsModule } from 'src/comments/comments.module';
+import { Membership, MembershipSchema } from '../entities/membership/membership.entity';
+import { User, UserSchema } from '../entities/users/users.entity';
 
 @Module({
   imports: [
     ConfigModule,
-    MongooseModule.forFeature([{ name: Post.name, schema: PostSchema }]),
+    MongooseModule.forFeature([
+      { name: Post.name, schema: PostSchema },
+      { name: Membership.name, schema: MembershipSchema },
+      { name: User.name, schema: UserSchema }
+    ]),
     ClientsModule.registerAsync([
       {
         name: 'KAFKA_CLIENT',

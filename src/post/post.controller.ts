@@ -1,9 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile, Inject, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile, Inject, Req, Query } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CommentsService } from '../comments/comments.service';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
 import { CreateCommentDto } from '../comments/comments.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
 import { Types } from 'mongoose';
@@ -24,12 +24,13 @@ export class PostController {
     private readonly postService: PostService,
     private readonly commentsService: CommentsService,
     @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka
-
   ) {}
+
   @Post()
   @ApiOperation({ summary: 'Create a new post' })
   @ApiResponse({ status: 201, description: 'Post created successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - User must be a member of the tribe' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -53,19 +54,17 @@ export class PostController {
         throw new Error('Image file is required');
       }
   
-      // Convert in-memory buffer to base64 string
       const base64Image = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
   
-      // Create post with base64 image and user ID
       const postData = {
         ...createPostDto,
         base64Image,
         userId: new Types.ObjectId(req.user.sub),
+        tribeId: new Types.ObjectId(createPostDto.tribeId),
       };
   
       const img = await this.postService.create(postData);
   
-      // Send image data to Kafka
       this.kafkaClient.emit('photo-upload', JSON.stringify({
         userId: req.user.sub,
         photoId: img.id,
@@ -79,17 +78,25 @@ export class PostController {
     }
   }
   
-  
   @Get()
-
   @ApiOperation({ summary: 'Get all posts' })
   @ApiResponse({ status: 200, description: 'Return all posts' })
-  findAll() {
+  @ApiQuery({ name: 'tribeId', required: false, description: 'Filter posts by tribe ID' })
+  findAll(@Query('tribeId') tribeId?: string) {
+    if (tribeId) {
+      return this.postService.findByTribe(tribeId);
+    }
     return this.postService.findAll();
   }
 
-  @Get(':id')
+  @Get('home')
+  @ApiOperation({ summary: 'Get home feed - posts from followed users' })
+  @ApiResponse({ status: 200, description: 'Return posts from followed users' })
+  getHomeFeed(@Req() req: any) {
+    return this.postService.getHomeFeed(req.user.sub);
+  }
 
+  @Get(':id')
   @ApiOperation({ summary: 'Get a post by id' })
   @ApiResponse({ status: 200, description: 'Return the post' })
   findOne(@Param('id') id: string) {
@@ -125,16 +132,11 @@ export class PostController {
   ) {
     try {
       if (file) {
-        // Read the file and convert to base64
         const imageBuffer = fs.readFileSync(file.path);
         const base64Image = `data:${file.mimetype};base64,${imageBuffer.toString('base64')}`;
-
-        // Delete the temporary file
         fs.unlinkSync(file.path);
-
         return this.postService.update(id, { ...updatePostDto, base64Image });
       }
-
       return this.postService.update(id, updatePostDto);
     } catch (error) {
       console.error('Error updating post:', error);
@@ -179,7 +181,6 @@ export class PostController {
   }
 
   @Get('user/:userId')
-
   @ApiOperation({ summary: 'Get all posts by a user' })
   @ApiResponse({ status: 200, description: 'Return all posts by the user' })
   findByUser(@Param('userId') userId: string) {

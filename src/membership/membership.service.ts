@@ -14,29 +14,7 @@ export class MembershipService {
         private readonly tribeService: TribeService,
       ) {}
     
-      async create(createMembership: CreateMembershipDto): Promise<MembershipDocument> {
-        const tribe = await this.tribeService.findByTribeId(createMembership.tribe.toString());
-        if (!tribe) {
-          throw new NotFoundException(`Tribe with ID ${createMembership.tribe} not found`);
-        }
-        const existingMembership = await this.membershipModel.findOne({
-          user: createMembership.user,
-          tribe: createMembership.tribe,
-        });
-        if (existingMembership) {
-          throw new NotFoundException(`Membership already exists for user ${createMembership.user} in tribe ${createMembership.tribe}`);
-        }
-        if(tribe.visibility === 'PRIVATE' ) {
-          createMembership.status = MembershipStatus.PENDING;
-        }
-        else {
-          createMembership.status = MembershipStatus.ACTIVE;
-        }
-
-        const createdMembership = new this.membershipModel(createMembership);
-        const membership = await createdMembership.save();
-        return membership
-      }
+     
     
       async findAll(): Promise<MembershipDocument[]> {
         return this.membershipModel.find().exec();

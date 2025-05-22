@@ -1,16 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException,Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Post, PostDocument } from '../entities/post/post.entity';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
 import sharp from 'sharp';
 import { ClientKafka } from '@nestjs/microservices';
+import { Membership, MembershipStatus } from '../entities/membership/membership.entity';
+import { User, UserDocument } from '../entities/users/users.entity';
 
 export interface CreatePostData {
   description: string;
   location: string;
   base64Image: string;
   userId: Types.ObjectId;
+  tribeId: Types.ObjectId;
 }
 
 @Injectable()
@@ -18,14 +21,29 @@ export class PostService {
   constructor(
     @InjectModel(Post.name)
     private readonly postModel: Model<PostDocument>,
+    @InjectModel(Membership.name)
+    private readonly membershipModel: Model<Membership>,
     @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka,
-    
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
   ) {}
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
     try {
+      // Verify user's membership in the tribe
+      const membership = await this.membershipModel.findOne({
+        user: createPostData.userId,
+        tribe: createPostData.tribeId,
+        status: MembershipStatus.ACTIVE
+      });
+
+      if (!membership) {
+        throw new ForbiddenException('You must be an active member of the tribe to create posts');
+      }
+
       const createdPost = new this.postModel({
         ...createPostData,
+        archived: false,
         metadata: {
           sentiment: null,
           keywords: [],
@@ -33,7 +51,6 @@ export class PostService {
           category: null,
           createdAt: null
         },
-
       });
       const savedPost = await createdPost.save();
       return savedPost;
@@ -45,8 +62,9 @@ export class PostService {
 
   async findAll(): Promise<PostDocument[]> {
     return this.postModel
-      .find()
+      .find({ archived: false })
       .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
       .populate('comments')
       .exec();
   }
@@ -55,6 +73,7 @@ export class PostService {
     const post = await this.postModel
       .findById(id)
       .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
       .populate('comments')
       .exec();
     
@@ -68,6 +87,7 @@ export class PostService {
     const updatedPost = await this.postModel
       .findByIdAndUpdate(id, updatePostDto, { new: true })
       .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
       .populate('comments')
       .exec();
     
@@ -89,12 +109,10 @@ export class PostService {
       const post = await this.findOne(postId);
       const userObjectId = new Types.ObjectId(userId);
 
-      // Ensure likes array exists
       if (!post.likes) {
         post.likes = [];
       }
 
-      // Check if user already liked the post
       const hasLiked = post.likes.some(likeId => 
         likeId.toString() === userObjectId.toString()
       );
@@ -103,15 +121,13 @@ export class PostService {
         post.likes.push(userObjectId);
         return post.save();
       }
-  
-      // Invia a Kafka
+
       this.kafkaClient.emit('user-interaction-topic', JSON.stringify({
         userId,
-        tag:post.metadata.keywords,
+        tag: post.metadata.keywords,
         interactionType: 'LIKE',
         timestamp: Date.now(),
       }));
-  
 
       return post;
     } catch (error) {
@@ -127,7 +143,6 @@ export class PostService {
       const post = await this.findOne(postId);
       const userObjectId = new Types.ObjectId(userId);
 
-      // Ensure likes array exists
       if (!post.likes) {
         post.likes = [];
         return post;
@@ -150,16 +165,64 @@ export class PostService {
       throw new BadRequestException('Invalid user ID');
     }
     return this.postModel
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({ 
+        userId: new Types.ObjectId(userId),
+        archived: false 
+      })
       .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
       .populate('comments')
       .exec();
   }
 
+  async findByTribe(tribeId: string): Promise<PostDocument[]> {
+    if (!Types.ObjectId.isValid(tribeId)) {
+      throw new BadRequestException('Invalid tribe ID');
+    }
+    return this.postModel
+      .find({ 
+        tribeId: new Types.ObjectId(tribeId),
+        archived: false 
+      })
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
+      .populate('comments')
+      .exec();
+  }
 
+  async archiveUserPosts(userId: string, tribeId: string): Promise<void> {
+    await this.postModel.updateMany(
+      { 
+        userId: new Types.ObjectId(userId),
+        tribeId: new Types.ObjectId(tribeId),
+        archived: false
+      },
+      { $set: { archived: true } }
+    );
+  }
 
-} 
+  async getHomeFeed(userId: string): Promise<PostDocument[]> {
+    // Get all posts from users that the current user follows
+    return this.postModel
+      .find({
+        archived: false,
+        userId: { $in: await this.getFollowingUserIds(userId) }
+      })
+      .populate('userId', 'name surname username profilePhoto')
+      .populate('tribeId', 'name')
+      .populate('comments')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
 
+  private async getFollowingUserIds(userId: string): Promise<Types.ObjectId[]> {
+    const user = await this.userModel.findById(userId).select('following').exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user.following || [];
+  }
+}
 
 interface UserInteractionEvent {
   userId: string;

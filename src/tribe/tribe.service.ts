@@ -6,7 +6,8 @@ import { User } from '../entities/users/users.entity';
 import { CreateTribeDto } from './dto/create-tribe.dto';
 import { UpdateTribeDto } from './dto/update-tribe.dto';
 import { UpdateTribeVisibilityDto } from './dto/update-tribe-visibility.dto';
-import { Membership, MembershipStatus } from '../entities/membership/membership.entity';
+import { Membership, MembershipStatus, TribeRole } from '../entities/membership/membership.entity';
+import { Post } from '../entities/post/post.entity';
 import { Types } from 'mongoose';
 
 @Injectable()
@@ -17,7 +18,9 @@ export class TribeService {
     @InjectModel(User.name)
     private userModel: Model<User>,
     @InjectModel(Membership.name)
-    private membershipModel: Model<Membership>
+    private membershipModel: Model<Membership>,
+    @InjectModel(Post.name)
+    private postModel: Model<Post>
   ) {}
 
   async create(createTribeDto: CreateTribeDto, founderId: string): Promise<Tribe> {
@@ -37,11 +40,12 @@ export class TribeService {
       // Save the tribe
       const savedTribe = await tribe.save();
 
-      // Create membership for the founder
+      // Create membership for the founder with FOUNDER role
       const membership = new this.membershipModel({
         user: founder._id,
         tribe: savedTribe._id,
-        status: MembershipStatus.ACTIVE
+        status: MembershipStatus.ACTIVE,
+        role: TribeRole.FOUNDER
       });
 
       await membership.save();
@@ -213,5 +217,190 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
     return tribe;
+  }
+
+  async handleMembershipRequest(tribeId: string, userId: string, action: 'accept' | 'reject', moderatorId: string): Promise<Membership> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if the moderator has permission
+    const moderatorMembership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: moderatorId,
+      status: MembershipStatus.ACTIVE,
+      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
+    });
+
+    if (!moderatorMembership) {
+      throw new ForbiddenException('Only founders and moderators can handle membership requests');
+    }
+
+    const membership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId,
+      status: MembershipStatus.PENDING
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Membership request not found');
+    }
+
+    if (action === 'accept') {
+      membership.status = MembershipStatus.ACTIVE;
+    } else {
+      membership.status = MembershipStatus.REJECTED;
+    }
+
+    return membership.save();
+  }
+
+  async upgradeToModerator(tribeId: string, userId: string, promoterId: string): Promise<Membership> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if the promoter has permission
+    const promoterMembership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: promoterId,
+      status: MembershipStatus.ACTIVE,
+      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
+    });
+
+    if (!promoterMembership) {
+      throw new ForbiddenException('Only founders and moderators can promote members');
+    }
+
+    const membership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId,
+      status: MembershipStatus.ACTIVE
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Active membership not found');
+    }
+
+    if (membership.role === TribeRole.MODERATOR) {
+      throw new BadRequestException('User is already a moderator');
+    }
+
+    membership.role = TribeRole.MODERATOR;
+    return membership.save();
+  }
+
+  async getTribeMembers(tribeId: string, userId: string): Promise<Membership[]> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if the user has permission to view members
+    const userMembership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId,
+      status: MembershipStatus.ACTIVE
+    });
+
+    if (!userMembership) {
+      throw new ForbiddenException('You must be a member to view tribe members');
+    }
+
+    return this.membershipModel.find({
+      tribe: tribeId,
+      status: MembershipStatus.ACTIVE
+    }).populate('user', 'name surname username profilePhoto');
+  }
+
+  async getPendingRequests(tribeId: string, userId: string): Promise<Membership[]> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if the user has permission to view pending requests
+    const userMembership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId,
+      status: MembershipStatus.ACTIVE,
+      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
+    });
+
+    if (!userMembership) {
+      throw new ForbiddenException('Only founders and moderators can view pending requests');
+    }
+
+    return this.membershipModel.find({
+      tribe: tribeId,
+      status: MembershipStatus.PENDING
+    }).populate('user', 'name surname username profilePhoto');
+  }
+
+  async requestJoin(tribeId: string, userId: string): Promise<Membership> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if user is already a member
+    const existingMembership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId
+    });
+
+    if (existingMembership) {
+      if (existingMembership.status === MembershipStatus.ACTIVE) {
+        throw new BadRequestException('You are already a member of this tribe');
+      }
+      if (existingMembership.status === MembershipStatus.PENDING) {
+        throw new BadRequestException('You already have a pending request to join this tribe');
+      }
+    }
+
+    const membership = new this.membershipModel({
+      user: userId,
+      tribe: tribeId,
+      status: MembershipStatus.PENDING,
+      role: TribeRole.MEMBER
+    });
+    if(tribe.visibility === 'PRIVATE' ) {
+              membership.status = MembershipStatus.PENDING;
+    }
+    else {
+        membership.status = MembershipStatus.ACTIVE;
+    }
+
+    return membership.save();
+  }
+
+  async getAllPostsByTribe(tribeId: string, userId: string): Promise<Post[]> {
+    try {
+      // Find the tribe
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Get all non-archived posts from the tribe
+      return this.postModel
+        .find({
+          tribeId: new Types.ObjectId(tribeId),
+          archived: false
+        })
+        .populate('userId', 'name surname username profilePhoto')
+        .populate('tribeId', 'name')
+        .populate('comments')
+        .sort({ createdAt: -1 })
+        .exec();
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error('Error getting tribe posts:', error);
+      throw new BadRequestException('Error retrieving tribe posts');
+    }
   }
 }

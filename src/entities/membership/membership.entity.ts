@@ -14,6 +14,12 @@ export enum MembershipStatus {
   REJECTED = 'rejected',
 }
 
+export enum TribeRole {
+  FOUNDER = 'founder',
+  MODERATOR = 'moderator',
+  MEMBER = 'member'
+}
+
 @Schema({ timestamps: true })
 export class Membership {
   @ApiProperty({ description: 'Unique identifier for the membership' })
@@ -39,6 +45,19 @@ export class Membership {
     default: MembershipStatus.PENDING
   })
   status: MembershipStatus;
+
+  @ApiProperty({ 
+    description: 'Role of the user in the tribe',
+    enum: TribeRole,
+    example: TribeRole.MEMBER
+  })
+  @Prop({ 
+    type: String, 
+    enum: TribeRole, 
+    required: true,
+    default: TribeRole.MEMBER
+  })
+  role: TribeRole;
 
   @ApiProperty({ description: 'When the user joined the tribe' })
   @Prop({ default: Date.now })

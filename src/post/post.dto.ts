@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsMongoId } from 'class-validator';
 
 export class CreatePostDto {
   @ApiProperty({ description: 'Description of the post' })
@@ -11,6 +11,11 @@ export class CreatePostDto {
   @IsString()
   @IsNotEmpty()
   location: string;
+
+  @ApiProperty({ description: 'ID of the tribe where the post will be published' })
+  @IsMongoId()
+  @IsNotEmpty()
+  tribeId: string;
 
   @ApiProperty({ type: 'string', format: 'binary', description: 'Post image' })
   @IsNotEmpty()
