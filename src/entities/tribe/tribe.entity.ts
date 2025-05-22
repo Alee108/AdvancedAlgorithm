@@ -5,6 +5,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { User } from '../users/users.entity';
 import { Membership } from '../membership/membership.entity';
 
+export enum TribeVisibility {
+  PUBLIC = 'PUBLIC',
+  PRIVATE = 'PRIVATE'
+}
+
 export type TribeDocument = Tribe & Document;
 
 @Schema({ timestamps: true })
@@ -13,16 +18,25 @@ export class Tribe {
   _id: Types.ObjectId;
 
   @ApiProperty({ description: 'Name of the tribe', example: 'Travel Enthusiasts' })
-  @Prop({ required: true, unique: true, minlength: 3, maxlength: 60 })
+  @Prop({ required: true, unique: true, minlength: 3, maxlength: 60, index: true })
   name: string;
 
   @ApiProperty({ description: 'Description of the tribe', example: 'A community for travel lovers' })
   @Prop({ type: String })
   description?: string;
 
-  @ApiProperty({ description: 'Whether the tribe is public or private', example: false })
-  @Prop({ default: false })
-  isPublic: boolean;
+  @ApiProperty({ 
+    description: 'Visibility of the tribe',
+    enum: TribeVisibility,
+    example: TribeVisibility.PUBLIC,
+    default: TribeVisibility.PUBLIC
+  })
+  @Prop({ 
+    type: String, 
+    enum: TribeVisibility, 
+    default: TribeVisibility.PUBLIC 
+  })
+  visibility: TribeVisibility;
 
   @ApiProperty({ description: 'Base64 encoded profile photo' })
   @Prop({ type: String, default: null })
@@ -44,4 +58,7 @@ export class Tribe {
 }
 
 export const TribeSchema = SchemaFactory.createForClass(Tribe);
+
+// Ensure the name index is unique
+TribeSchema.index({ name: 1 }, { unique: true });
   
