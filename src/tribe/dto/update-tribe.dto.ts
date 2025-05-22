@@ -1,18 +1,19 @@
-import { IsNotEmpty, IsString, Length, IsOptional, IsBase64, IsEnum } from 'class-validator';
+import { IsString, Length, IsOptional, IsBase64, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TribeVisibility } from '../../entities/tribe/tribe.entity';
 
-export class CreateTribeDto {
+export class UpdateTribeDto {
   @ApiProperty({
     description: 'Name of the tribe',
     example: 'Travel Enthusiasts',
     minLength: 3,
-    maxLength: 60
+    maxLength: 60,
+    required: false
   })
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @Length(3, 60)
-  name: string;
+  name?: string;
 
   @ApiProperty({
     description: 'Description of the tribe',
@@ -27,7 +28,7 @@ export class CreateTribeDto {
     description: 'Visibility of the tribe',
     enum: TribeVisibility,
     example: TribeVisibility.PUBLIC,
-    default: TribeVisibility.PUBLIC
+    required: false
   })
   @IsEnum(TribeVisibility)
   @IsOptional()
