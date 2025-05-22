@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException, Patch, Param, Delete, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException, Patch, Param, Delete, Get, InternalServerErrorException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { TribeService } from './tribe.service';
 import { CreateTribeDto } from './dto/create-tribe.dto';
 import { UpdateTribeDto } from './dto/update-tribe.dto';
@@ -120,6 +120,7 @@ export class TribeController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only the founder can delete the tribe.' })
   @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   async delete(
     @Param('id') id: string,
     @Req() req: any
@@ -129,10 +130,32 @@ export class TribeController {
         throw new BadRequestException('User not authenticated');
       }
 
+      console.log('Delete request received:', {
+        tribeId: id,
+        userId: req.user.sub,
+        userEmail: req.user.email
+      });
+
       await this.tribeService.delete(id, req.user.sub);
     } catch (error) {
-      console.error('Error deleting tribe:', error);
-      throw error;
+      console.error('Error in delete tribe controller:', {
+        error: error.message,
+        stack: error.stack,
+        tribeId: id,
+        userId: req.user?.sub
+      });
+
+      if (error instanceof BadRequestException ||
+          error instanceof NotFoundException ||
+          error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException({
+        message: 'Error deleting tribe',
+        details: error.message,
+        tribeId: id
+      });
     }
   }
 

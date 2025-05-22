@@ -96,8 +96,8 @@ export class TribeService {
     try {
       console.log(`Attempting to delete tribe ${tribeId} by user ${userId}`);
       
-      // Find the tribe
-      const tribe = await this.tribeModel.findById(tribeId);
+      // Find the tribe using lean() to get a plain JavaScript object
+      const tribe = await this.tribeModel.findById(tribeId).lean();
       if (!tribe) {
         console.log(`Tribe ${tribeId} not found`);
         throw new NotFoundException('Tribe not found');
@@ -111,30 +111,26 @@ export class TribeService {
         throw new ForbiddenException('Only the founder can delete the tribe');
       }
 
-      // Start a session for transaction
-      const session = await this.tribeModel.startSession();
       try {
-        await session.withTransaction(async () => {
-          console.log(`Deleting memberships for tribe ${tribeId}`);
-          // Delete all memberships associated with this tribe
-          const deleteMembershipsResult = await this.membershipModel.deleteMany({ tribe: tribeId }).session(session);
-          console.log(`Deleted ${deleteMembershipsResult.deletedCount} memberships`);
+        console.log(`Deleting memberships for tribe ${tribeId}`);
+        // Use deleteMany() instead of remove()
+        await this.membershipModel.deleteMany({ tribe: tribeId });
+        console.log(`Deleted memberships for tribe ${tribeId}`);
 
-          console.log(`Deleting tribe ${tribeId}`);
-          // Delete the tribe
-          const result = await this.tribeModel.findByIdAndDelete(tribeId).session(session);
-          if (!result) {
-            console.log(`Tribe ${tribeId} not found during deletion`);
-            throw new NotFoundException('Tribe not found during deletion');
-          }
-          console.log(`Successfully deleted tribe ${tribeId}`);
-        });
-      } finally {
-        await session.endSession();
+        console.log(`Deleting tribe ${tribeId}`);
+        // Use deleteOne() instead of remove()
+        await this.tribeModel.deleteOne({ _id: tribeId });
+        console.log(`Successfully deleted tribe ${tribeId}`);
+      } catch (error) {
+        console.error('Error during deletion operations:', error);
+        throw new BadRequestException('Error during tribe deletion: ' + error.message);
       }
     } catch (error) {
       console.error('Error in delete tribe service:', error);
-      throw error;
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new BadRequestException('Error deleting tribe: ' + error.message);
     }
   }
 
