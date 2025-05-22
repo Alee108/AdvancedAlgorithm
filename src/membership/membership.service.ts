@@ -52,7 +52,7 @@ export class MembershipService {
         return updatedMembership;
       }
         async getAllMembershipsByTribe(tribeId: string): Promise<MembershipDocument[]> {
-       const tribe =  this.tribeService.findById(tribeId);
+       const tribe =  this.tribeService.findByTribeId(tribeId);
         if (!tribe) {
             throw new NotFoundException(`Tribe with ID ${tribeId} not found`);
         }
@@ -63,7 +63,7 @@ export class MembershipService {
     }
 
       async getAllMembershipsByTribeAndStatus(tribeId: string, status: MembershipStatus): Promise<MembershipDocument[]> {
-       const tribe =  this.tribeService.findById(tribeId);
+       const tribe =  this.tribeService.findByTribeId(tribeId);
         if (!tribe) {
             throw new NotFoundException(`Tribe with ID ${tribeId} not found`);
         }

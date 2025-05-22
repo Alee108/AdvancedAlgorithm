@@ -210,4 +210,12 @@ export class TribeService {
       throw new BadRequestException('Invalid tribe ID');
     }
   }
+
+  async findByTribeId(tribeId: string): Promise<Tribe> {
+    const tribe = await this.tribeModel.findById(tribeId).exec();
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+    return tribe;
+  }
 }
