@@ -146,10 +146,11 @@ export class TribeService {
         throw new NotFoundException('Tribe not found');
       }
 
-      // Check if user is the founder
-      if (tribe.founder.toString() !== userId) {
-        throw new ForbiddenException('Only the founder can update the tribe visibility');
-      }
+    // Check if the moderator has permission
+    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
+      membership.user._id.toString() === userId)) {
+      throw new ForbiddenException('Only founders and moderators can view pending requests');
+    }
 
       // Update only the visibility
       const updatedTribe = await this.tribeModel.findByIdAndUpdate(
@@ -226,16 +227,11 @@ export class TribeService {
     }
 
     // Check if the moderator has permission
-    const moderatorMembership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: moderatorId,
-      status: MembershipStatus.ACTIVE,
-      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
-    });
-
-    if (!moderatorMembership) {
-      throw new ForbiddenException('Only founders and moderators can handle membership requests');
+    if (! (tribe.founder._id.toString() == moderatorId) || tribe.memberships.some(membership =>
+      membership.user._id.toString() === moderatorId)) {
+      throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
+    
 
     const membership = await this.membershipModel.findOne({
       tribe: tribeId,
@@ -262,16 +258,9 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
-    // Check if the promoter has permission
-    const promoterMembership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: promoterId,
-      status: MembershipStatus.ACTIVE,
-      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
-    });
-
-    if (!promoterMembership) {
-      throw new ForbiddenException('Only founders and moderators can promote members');
+    if (! (tribe.founder._id.toString() == promoterId) || tribe.memberships.some(membership =>
+      membership.user._id.toString() === promoterId)) {
+      throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
 
     const membership = await this.membershipModel.findOne({
@@ -298,15 +287,9 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
-    // Check if the user has permission to view members
-    const userMembership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId,
-      status: MembershipStatus.ACTIVE
-    });
-
-    if (!userMembership) {
-      throw new ForbiddenException('You must be a member to view tribe members');
+    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
+      membership.user._id.toString() === userId)) {
+      throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
 
     return this.membershipModel.find({
@@ -322,14 +305,9 @@ export class TribeService {
     }
 
     // Check if the user has permission to view pending requests
-    const userMembership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId,
-      status: MembershipStatus.ACTIVE,
-      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
-    });
 
-    if (!userMembership) {
+    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
+      membership.user._id.toString() === userId)) {
       throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
 
