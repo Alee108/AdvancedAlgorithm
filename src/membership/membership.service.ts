@@ -67,16 +67,16 @@ export class MembershipService {
           .exec();
         return memberships;
     }
-    async exitFromTribe(userId: string,tribeId:string): Promise<MembershipDocument> { 
-     const memberships = await this.membershipModel
-          .findOne({ user: userId, status: MembershipStatus.PENDING })
+    async exitFromTribe(userId: string, tribeId: string): Promise<MembershipDocument> { 
+     const membership = await this.membershipModel
+          .findOne({ user: userId, tribe: tribeId, status: MembershipStatus.ACTIVE })
           .exec();
-        if (!memberships) {
-          throw new NotFoundException(`Membership with ID ${userId} not found`);
+        if (!membership) {
+          throw new NotFoundException(`Active membership not found for user ${userId} in tribe ${tribeId}`);
         }
-        memberships.status = MembershipStatus.ARCHIVED;
-        memberships.leftAt = new Date();
-        const updatedMembership = await memberships.save();
+        membership.status = MembershipStatus.ARCHIVED;
+        membership.leftAt = new Date();
+        const updatedMembership = await membership.save();
         return updatedMembership;
     }
 

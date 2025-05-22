@@ -47,15 +47,7 @@ export class TribeService {
       // Save the tribe
       const savedTribe = await tribe.save();
 
-      const founderMembership =await this.membershipModel.find({
-        user: founder._id})
-        console.log(founderMembership)
-      const pastMemberships = await this.membershipModel.updateMany(
-        { user: new Types.ObjectId(founder._id)},{status: MembershipStatus.REJECTED})
-        .exec()
-      if (pastMemberships) {
-        console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
-      }
+      this.rejectPastMemberships(founder)
 
       // Create membership for the founder with FOUNDER role
       const membership = new this.membershipModel({
@@ -114,7 +106,7 @@ export class TribeService {
     }
   }
 
-  async delete(tribeId: string, userId: string): Promise<void> {
+  async delete(tribeId: string, userId: string): Promise<string> {
     try {
       console.log(`Attempting to delete tribe ${tribeId} by user ${userId}`);
       
@@ -136,13 +128,15 @@ export class TribeService {
       try {
         console.log(`Deleting memberships for tribe ${tribeId}`);
         // Use deleteMany() instead of remove()
-        await this.membershipModel.deleteMany({ tribe: tribeId });
+        await this.membershipModel.deleteMany({ tribe: new Types.ObjectId(tribeId) });
         console.log(`Deleted memberships for tribe ${tribeId}`);
 
         console.log(`Deleting tribe ${tribeId}`);
         // Use deleteOne() instead of remove()
-        await this.tribeModel.deleteOne({ _id: tribeId });
+        await this.tribeModel.deleteOne({ _id: new Types.ObjectId(tribeId) });
         console.log(`Successfully deleted tribe ${tribeId}`);
+
+        return "Tribe deleted successfully";
       } catch (error) {
         console.error('Error during deletion operations:', error);
         throw new BadRequestException('Error during tribe deletion: ' + error.message);
@@ -283,6 +277,7 @@ export class TribeService {
       tribe.memberships.push(membershipSaved);
       await tribe.save();
     }
+
     return membershipSaved;
   }
 
@@ -292,9 +287,16 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
-    if (! (tribe.founder._id.toString() == promoterId) || tribe.memberships.some(membership =>
-      membership.user._id.toString() === promoterId)) {
-      throw new ForbiddenException('Only founders and moderators can view pending requests');
+    // Check if promoter is founder or moderator
+    const promoterMembership = await this.membershipModel.findOne({
+      tribe: new Types.ObjectId(tribeId),
+      user: new Types.ObjectId(promoterId),
+      status: MembershipStatus.ACTIVE,
+      role: { $in: [TribeRole.FOUNDER, TribeRole.MODERATOR] }
+    });
+
+    if (!promoterMembership) {
+      throw new ForbiddenException('Only founders and moderators can promote members');
     }
 
     const membership = await this.membershipModel.findOne({
@@ -410,5 +412,17 @@ export class TribeService {
       console.error('Error getting tribe posts:', error);
       throw new BadRequestException('Error retrieving tribe posts');
     }
+  }
+
+  async rejectPastMemberships(user:User){
+      const founderMembership =await this.membershipModel.find({
+        user: user._id,status:{ $in:  MembershipStatus.PENDING}})
+        console.log("Found " + founderMembership.length + "Membership")
+      const pastMemberships = await this.membershipModel.updateMany(
+        { user: new Types.ObjectId(user._id),status:{ $in:  MembershipStatus.PENDING}},{status: MembershipStatus.REJECTED})
+        .exec()
+      if (pastMemberships) {
+        console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
+      }
   }
 }
