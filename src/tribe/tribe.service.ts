@@ -31,6 +31,13 @@ export class TribeService {
         throw new NotFoundException('Founder not found');
       }
 
+      const memberships = await this.membershipModel.find({ user: new Types.ObjectId(founderId)})
+      if(memberships.length > 0) {
+        if(memberships.some((elem)=>elem.status ==   MembershipStatus.ACTIVE)) {
+          throw new BadRequestException('You are already a member of a tribe');
+        }
+
+      }
       // Create the tribe
       const tribe = new this.tribeModel({
         ...createTribeDto,
@@ -40,10 +47,20 @@ export class TribeService {
       // Save the tribe
       const savedTribe = await tribe.save();
 
+      const founderMembership =await this.membershipModel.find({
+        user: founder._id})
+        console.log(founderMembership)
+      const pastMemberships = await this.membershipModel.updateMany(
+        { user: new Types.ObjectId(founder._id)},{status: MembershipStatus.REJECTED})
+        .exec()
+      if (pastMemberships) {
+        console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
+      }
+
       // Create membership for the founder with FOUNDER role
       const membership = new this.membershipModel({
-        user: founder._id,
-        tribe: savedTribe._id,
+        user: new Types.ObjectId(founder._id),
+        tribe: new Types.ObjectId(savedTribe._id),
         status: MembershipStatus.ACTIVE,
         role: TribeRole.FOUNDER
       });
@@ -55,6 +72,7 @@ export class TribeService {
       if (!populatedTribe) {
         throw new NotFoundException('Tribe not found after creation');
       }
+
       return populatedTribe;
     } catch (error) {
       console.error('Error in create tribe service:', error);
@@ -245,8 +263,8 @@ export class TribeService {
     
 
     const membership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId,
+      tribe: new Types.ObjectId(tribeId),
+      user: new Types.ObjectId(userId),
       status: MembershipStatus.PENDING
     });
 
@@ -259,8 +277,13 @@ export class TribeService {
     } else {
       membership.status = MembershipStatus.REJECTED;
     }
-
-    return membership.save();
+    const membershipSaved =  await membership.save();
+    if (action === 'accept') {
+      // Add the user to the tribe's members
+      tribe.memberships.push(membershipSaved);
+      await tribe.save();
+    }
+    return membershipSaved;
   }
 
   async upgradeToModerator(tribeId: string, userId: string, promoterId: string): Promise<Membership> {
@@ -275,8 +298,8 @@ export class TribeService {
     }
 
     const membership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId,
+      tribe: new Types.ObjectId(tribeId),
+      user: new Types.ObjectId(userId),
       status: MembershipStatus.ACTIVE
     });
 
@@ -331,23 +354,23 @@ export class TribeService {
     }
 
     // Check if user is already a member
-    const existingMembership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId
+    const existingMembership = await this.membershipModel.find({
+      user: new Types.ObjectId(userId),
+      status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
     });
 
-    if (existingMembership) {
-      if (existingMembership.status === MembershipStatus.ACTIVE) {
-        throw new BadRequestException('You are already a member of this tribe');
+    if (existingMembership.length > 0) {
+      if (existingMembership.some((elem)=>elem.status ==   MembershipStatus.ACTIVE)) {
+        throw new BadRequestException('You are already a member of a tribe');
       }
-      if (existingMembership.status === MembershipStatus.PENDING) {
+      if (existingMembership.filter((req)=>{req.tribe._id.toString()==tribeId}).find((elem)=>elem.status === MembershipStatus.PENDING)) {
         throw new BadRequestException('You already have a pending request to join this tribe');
       }
     }
 
     const membership = new this.membershipModel({
-      user: userId,
-      tribe: tribeId,
+      user: new Types.ObjectId(userId),
+      tribe: new Types.ObjectId(tribeId),
       status: MembershipStatus.PENDING,
       role: TribeRole.MEMBER
     });
