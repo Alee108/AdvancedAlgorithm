@@ -220,6 +220,17 @@ export class TribeService {
     return tribe;
   }
 
+  async findAll(): Promise<Tribe[]> {
+    try {
+      const tribes = await this.tribeModel.find().populate('founder', 'username profilePhoto').lean().exec();
+
+      return tribes;
+    } catch (error) {
+      console.error('Error in find all tribes service:', error);
+      throw new BadRequestException('Error retrieving tribes' + error.message);
+    }
+  }
+
   async handleMembershipRequest(tribeId: string, userId: string, action: 'accept' | 'reject', moderatorId: string): Promise<Membership> {
     const tribe = await this.tribeModel.findById(tribeId);
     if (!tribe) {
@@ -287,10 +298,6 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
-    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
-      membership.user._id.toString() === userId)) {
-      throw new ForbiddenException('Only founders and moderators can view pending requests');
-    }
 
     return this.membershipModel.find({
       tribe: tribeId,

@@ -313,4 +313,16 @@ export class TribeController {
     }
     return this.tribeService.getAllPostsByTribe(tribeId, req.user.sub);
   }
+  @Get()
+  @ApiOperation({ summary: 'Get all tribes' })
+  @ApiResponse({ status: 200, description: 'Returns list of all tribes.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async findAll(): Promise<Tribe[]> {
+    try {
+      return this.tribeService.findAll();
+    } catch (error) {
+      console.error('Error in find all tribes controller:', error);
+      throw error;
+    }
+  }
 }
