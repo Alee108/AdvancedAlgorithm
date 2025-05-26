@@ -75,7 +75,7 @@ export class MembershipService {
         if (!membership) {
           throw new NotFoundException(`Active membership not found for user ${userId} in tribe ${tribeId}`);
         }
-        membership.status = MembershipStatus.ARCHIVED;
+        membership.status = MembershipStatus.INACTIVE;
         membership.leftAt = new Date();
         const updatedMembership = await membership.save();
         return updatedMembership;

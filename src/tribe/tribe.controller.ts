@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException, Patch, Param, Delete, Get, InternalServerErrorException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, UseInterceptors, UploadedFile, Req, BadRequestException, Patch, Param, Delete, Get, InternalServerErrorException, NotFoundException, ForbiddenException, Query } from '@nestjs/common';
 import { TribeService } from './tribe.service';
 import { CreateTribeDto } from './dto/create-tribe.dto';
 import { UpdateTribeDto } from './dto/update-tribe.dto';
@@ -185,6 +185,40 @@ export class TribeController {
     }
   }
 
+  @Get()
+  @ApiOperation({ summary: 'Get all tribes' })
+  @ApiResponse({ status: 200, description: 'Returns list of all tribes.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async findAll(): Promise<Tribe[]> {
+    try {
+      return this.tribeService.findAll();
+    } catch (error) {
+      console.error('Error in find all tribes controller:', error);
+      throw error;
+    }
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search tribes by name' })
+  @ApiResponse({ status: 200, description: 'Returns matching tribes.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async searchTribes(
+    @Query('name') query: string,
+    @Req() req: any
+  ): Promise<Tribe[]> {
+    try {
+      if (!req.user || !req.user.sub) {
+        throw new BadRequestException('User not authenticated');
+      }
+
+      return this.tribeService.searchTribes(query);
+    } catch (error) {
+      console.error('Error searching tribes:', error);
+      throw error;
+    }
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a tribe by ID' })
   @ApiResponse({ status: 200, description: 'Tribe found successfully.' })
@@ -312,17 +346,5 @@ export class TribeController {
       throw new BadRequestException('User not authenticated');
     }
     return this.tribeService.getAllPostsByTribe(tribeId, req.user.sub);
-  }
-  @Get()
-  @ApiOperation({ summary: 'Get all tribes' })
-  @ApiResponse({ status: 200, description: 'Returns list of all tribes.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async findAll(): Promise<Tribe[]> {
-    try {
-      return this.tribeService.findAll();
-    } catch (error) {
-      console.error('Error in find all tribes controller:', error);
-      throw error;
-    }
   }
 }

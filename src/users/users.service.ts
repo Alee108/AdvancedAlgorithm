@@ -24,6 +24,15 @@ export class UsersService {
     return this.userModel.find().exec();
   }
 
+  async findTopUsers(): Promise<UserDocument[]> {
+    return this.userModel.find()
+      .sort({ followers: -1 })
+      .limit(50)
+      .select('username name surname profilePhoto followers following')
+      .lean()
+      .exec();
+  }
+
   async findOne(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email }).exec();
   }
@@ -144,6 +153,23 @@ export class UsersService {
     } catch (error) {
       console.error('Error updating visibility:', error);
       throw error;
+    }
+  }
+
+  async searchUsers(query: string): Promise<UserDocument[]> {
+    try {
+      // Create a case-insensitive regex for the search query
+      const searchRegex = new RegExp(query, 'i');
+
+      // Find users matching the username
+      const users = await this.userModel.find({
+        username: searchRegex
+      }).select('username name surname profilePhoto followers following').lean().exec();
+      
+      return users;
+    } catch (error) {
+      console.error('Error in search users service:', error);
+      throw new BadRequestException('Error searching users: ' + error.message);
     }
   }
 }

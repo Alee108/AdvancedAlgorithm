@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Tribe } from '../entities/tribe/tribe.entity';
@@ -9,9 +9,12 @@ import { UpdateTribeVisibilityDto } from './dto/update-tribe-visibility.dto';
 import { Membership, MembershipStatus, TribeRole } from '../entities/membership/membership.entity';
 import { Post } from '../entities/post/post.entity';
 import { Types } from 'mongoose';
+import { PostService } from '../post/post.service';
 
 @Injectable()
 export class TribeService {
+  private readonly logger = new Logger(TribeService.name);
+
   constructor(
     @InjectModel(Tribe.name)
     private tribeModel: Model<Tribe>,
@@ -20,7 +23,8 @@ export class TribeService {
     @InjectModel(Membership.name)
     private membershipModel: Model<Membership>,
     @InjectModel(Post.name)
-    private postModel: Model<Post>
+    private postModel: Model<Post>,
+    private postService: PostService
   ) {}
 
   async create(createTribeDto: CreateTribeDto, founderId: string): Promise<Tribe> {
@@ -158,11 +162,16 @@ export class TribeService {
         throw new NotFoundException('Tribe not found');
       }
 
-    // Check if the moderator has permission
-    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
-      membership.user._id.toString() === userId)) {
-      throw new ForbiddenException('Only founders and moderators can view pending requests');
-    }
+      // Check if the user has permission
+      const isFounder = tribe.founder._id.toString() === userId;
+      const isModerator = tribe.memberships.some(membership => 
+        membership.user._id.toString() === userId && 
+        membership.role === TribeRole.MODERATOR
+      );
+
+      if (!isFounder && !isModerator) {
+        throw new ForbiddenException('Only founders and moderators can update tribe visibility');
+      }
 
       // Update only the visibility
       const updatedTribe = await this.tribeModel.findByIdAndUpdate(
@@ -175,18 +184,19 @@ export class TribeService {
         throw new NotFoundException('Tribe not found after update');
       }
 
-      // Check if the tribe is private
+      // Check if the tribe is now public
       if (updatedTribe.visibility === 'PUBLIC') {
         // get all the pending requests and update their status to ACTIVE
         const pendingMemberships = await this.membershipModel.find({
           tribe: new Types.ObjectId(tribeId),
           status: MembershipStatus.PENDING
         });
+        
         if (pendingMemberships.length > 0) {
           for (const membership of pendingMemberships) {
             membership.status = MembershipStatus.ACTIVE;
             await membership.save();
-  
+            
             tribe.memberships.push(membership);
             await tribe.save();
           }
@@ -266,10 +276,15 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
-    // Check if the moderator has permission
-    if (! (tribe.founder._id.toString() == moderatorId) || tribe.memberships.some(membership =>
-      membership.user._id.toString() === moderatorId)) {
-      throw new ForbiddenException('Only founders and moderators can view pending requests');
+    // Check if the user has permission
+    const isFounder = tribe.founder._id.toString() === moderatorId;
+    const isModerator = tribe.memberships.some(membership => 
+      membership.user._id.toString() === moderatorId && 
+      membership.role === TribeRole.MODERATOR
+    );
+
+    if (!isFounder && !isModerator) {
+      throw new ForbiddenException('Only founders and moderators can handle membership requests');
     }
 
     //check if the user has active membership
@@ -281,8 +296,6 @@ export class TribeService {
     if (activeMembership.length > 0) {
       throw new BadRequestException('You are already a member of a tribe');
     }
-    
-    
 
     const membership = await this.membershipModel.findOne({
       tribe: new Types.ObjectId(tribeId),
@@ -299,7 +312,7 @@ export class TribeService {
     } else {
       membership.status = MembershipStatus.REJECTED;
     }
-    const membershipSaved =  await membership.save();
+    const membershipSaved = await membership.save();
     if (action === 'accept') {
       // Add the user to the tribe's members
       tribe.memberships.push(membershipSaved);
@@ -365,9 +378,13 @@ export class TribeService {
     }
 
     // Check if the user has permission to view pending requests
+    const isFounder = tribe.founder._id.toString() === userId;
+    const isModerator = tribe.memberships.some(membership => 
+      membership.user._id.toString() === userId && 
+      membership.role === TribeRole.MODERATOR
+    );
 
-    if (! (tribe.founder._id.toString() == userId) || tribe.memberships.some(membership =>
-      membership.user._id.toString() === userId)) {
+    if (!isFounder && !isModerator) {
       throw new ForbiddenException('Only founders and moderators can view pending requests');
     }
 
@@ -378,40 +395,93 @@ export class TribeService {
   }
 
   async requestJoin(tribeId: string, userId: string): Promise<Membership> {
-    const tribe = await this.tribeModel.findById(tribeId);
-    if (!tribe) {
-      throw new NotFoundException('Tribe not found');
-    }
+    const session = await this.membershipModel.startSession();
+    session.startTransaction();
 
-    // Check if user is already a member
-    const existingMembership = await this.membershipModel.find({
-      user: new Types.ObjectId(userId),
-      status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
-    });
-
-    if (existingMembership.length > 0) {
-      if (existingMembership.some((elem)=>elem.status ==   MembershipStatus.ACTIVE)) {
-        throw new BadRequestException('You are already a member of a tribe');
+    try {
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
       }
-      if (existingMembership.filter((req)=>{req.tribe._id.toString()==tribeId}).find((elem)=>elem.status === MembershipStatus.PENDING)) {
-        throw new BadRequestException('You already have a pending request to join this tribe');
+
+      // Check if user is already a member using transaction
+      const existingMembership = await this.membershipModel.find({
+        user: new Types.ObjectId(userId),
+        status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
+      }).session(session);
+
+      if (existingMembership.length > 0) {
+        if (existingMembership.some((elem) => elem.status === MembershipStatus.ACTIVE)) {
+          throw new BadRequestException('You are already a member of a tribe');
+        }
+        if (existingMembership.some((req) => req.tribe._id.toString() === tribeId && req.status === MembershipStatus.PENDING)) {
+          throw new BadRequestException('You already have a pending request to join this tribe');
+        }
       }
-    }
 
-    const membership = new this.membershipModel({
-      user: new Types.ObjectId(userId),
-      tribe: new Types.ObjectId(tribeId),
-      status: MembershipStatus.PENDING,
-      role: TribeRole.MEMBER
-    });
-    if(tribe.visibility === 'PRIVATE' ) {
-              membership.status = MembershipStatus.PENDING;
-    }
-    else {
-        membership.status = MembershipStatus.ACTIVE;
-    }
+      const membership = new this.membershipModel({
+        user: new Types.ObjectId(userId),
+        tribe: new Types.ObjectId(tribeId),
+        status: tribe.visibility === 'PRIVATE' ? MembershipStatus.PENDING : MembershipStatus.ACTIVE,
+        role: TribeRole.MEMBER
+      });
 
-    return membership.save();
+      const savedMembership = await membership.save({ session });
+
+      if (tribe.visibility === 'PUBLIC') {
+        tribe.memberships.push(savedMembership);
+        await tribe.save({ session });
+      }
+
+      await session.commitTransaction();
+      return savedMembership;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async leaveTribe(tribeId: string, userId: string): Promise<void> {
+    const session = await this.membershipModel.startSession();
+    session.startTransaction();
+
+    try {
+      const membership = await this.membershipModel.findOne({
+        tribe: new Types.ObjectId(tribeId),
+        user: new Types.ObjectId(userId),
+        status: MembershipStatus.ACTIVE
+      }).session(session);
+
+      if (!membership) {
+        throw new NotFoundException('Active membership not found');
+      }
+
+      // Archive all user's posts in this tribe
+      await this.postService.archiveUserPosts(
+        new Types.ObjectId(userId),
+        new Types.ObjectId(tribeId)
+      );
+
+      // Update membership status
+      membership.status = MembershipStatus.INACTIVE;
+      membership.leftAt = new Date();
+      await membership.save({ session });
+
+      // Remove from tribe's memberships array
+      await this.tribeModel.updateOne(
+        { _id: new Types.ObjectId(tribeId) },
+        { $pull: { memberships: membership._id } }
+      ).session(session);
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 
   async getAllPostsByTribe(tribeId: string, userId: string): Promise<Post[]> {
@@ -442,15 +512,42 @@ export class TribeService {
     }
   }
 
-  async rejectPastMemberships(user:User){
-      const founderMembership =await this.membershipModel.find({
-        user: user._id,status:{ $in:  MembershipStatus.PENDING}})
-        console.log("Found " + founderMembership.length + "Membership")
-      const pastMemberships = await this.membershipModel.updateMany(
-        { user: new Types.ObjectId(user._id),status:{ $in:  MembershipStatus.PENDING}},{status: MembershipStatus.REJECTED})
-        .exec()
-      if (pastMemberships) {
-        console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
-      }
+  async rejectPastMemberships(user: User) {
+    const founderMembership = await this.membershipModel.find({
+      user: user._id,
+      status: { $in: [MembershipStatus.PENDING] }
+    });
+    console.log("Found " + founderMembership.length + " Membership");
+    
+    const pastMemberships = await this.membershipModel.updateMany(
+      { 
+        user: new Types.ObjectId(user._id),
+        status: { $in: [MembershipStatus.PENDING] }
+      },
+      { status: MembershipStatus.REJECTED }
+    ).exec();
+    
+    if (pastMemberships) {
+      console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
+    }
+  }
+
+  async searchTribes(query: string): Promise<Tribe[]> {
+    try {
+      // Create a case-insensitive regex for the search query
+      const searchRegex = new RegExp(query, 'i');
+
+      // Find tribes matching the name
+      this.logger.log('Querying tribes with regex:', searchRegex);
+      const tribes = await this.tribeModel.find({
+        name: searchRegex
+      }).populate('founder', 'username profilePhoto').lean().exec();
+      this.logger.log(`Found ${tribes.length} tribes matching the query: ${query}`);
+      
+      return tribes;
+    } catch (error) {
+      console.error('Error in search tribes service:', error);
+      throw new BadRequestException('Error searching tribes: ' + error.message);
+    }
   }
 }

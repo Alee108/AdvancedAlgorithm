@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException, BadRequestException, Query } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './users.dto';
 import { UpdateVisibilityDto } from './dto/update-visibility.dto';
@@ -19,15 +19,41 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'Return all users.' })
   findAll() {
     return this.usersService.findAll();
   }
 
-  @Get(':id')
+  @Get('top')
+  @ApiOperation({ summary: 'Get top 50 users by followers' })
+  @ApiResponse({ status: 200, description: 'Return top 50 users ordered by followers count.' })
+  findTopUsers() {
+    return this.usersService.findTopUsers();
+  }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Search users by username' })
+  @ApiResponse({ status: 200, description: 'Returns matching users.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async searchUsers(
+    @Query('username') query: string,
+    @Req() req: any
+  ) {
+    try {
+      if (!req.user || !req.user.sub) {
+        throw new BadRequestException('User not authenticated');
+      }
+
+      return this.usersService.searchUsers(query);
+    } catch (error) {
+      console.error('Error searching users:', error);
+      throw error;
+    }
+  }
+
+  @Get(':id')
   @ApiOperation({ summary: 'Get a user by id' })
   @ApiResponse({ status: 200, description: 'Return the user.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
@@ -104,7 +130,6 @@ export class UsersController {
   }
 
   @Get(':id/followers')
-
   @ApiOperation({ summary: 'Get user followers' })
   @ApiResponse({ status: 200, description: 'Return user followers.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
@@ -113,7 +138,6 @@ export class UsersController {
   }
 
   @Get(':id/following')
-
   @ApiOperation({ summary: 'Get users that the user is following' })
   @ApiResponse({ status: 200, description: 'Return following users.' })
   @ApiResponse({ status: 404, description: 'User not found.' })

@@ -8,10 +8,10 @@ import { Tribe } from '../tribe/tribe.entity';
 export type MembershipDocument = Membership & Document;
 
 export enum MembershipStatus {
-  PENDING = 'pending',
-  ACTIVE = 'active',
-  ARCHIVED = 'archived',
-  REJECTED = 'rejected',
+  ACTIVE = 'ACTIVE',
+  PENDING = 'PENDING',
+  REJECTED = 'REJECTED',
+  INACTIVE = 'INACTIVE'
 }
 
 export enum TribeRole {

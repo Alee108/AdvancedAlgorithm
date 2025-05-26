@@ -190,15 +190,22 @@ export class PostService {
       .exec();
   }
 
-  async archiveUserPosts(userId: string, tribeId: string): Promise<void> {
-    await this.postModel.updateMany(
-      { 
-        userId: new Types.ObjectId(userId),
-        tribeId: new Types.ObjectId(tribeId),
-        archived: false
-      },
-      { $set: { archived: true } }
-    );
+  async archiveUserPosts(userId: Types.ObjectId, tribeId: Types.ObjectId): Promise<void> {
+    try {
+      await this.postModel.updateMany(
+        {
+          userId: userId,
+          tribeId: tribeId,
+          archived: false
+        },
+        {
+          $set: { archived: true }
+        }
+      );
+    } catch (error) {
+      console.error('Error archiving user posts:', error);
+      throw error;
+    }
   }
 
   async getHomeFeed(userId: string): Promise<PostDocument[]> {
