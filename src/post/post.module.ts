@@ -9,6 +9,7 @@ import { CommentsModule } from 'src/comments/comments.module';
 import { Membership, MembershipSchema } from '../entities/membership/membership.entity';
 import { User, UserSchema } from '../entities/users/users.entity';
 import { Neo4jModule } from '../neo4j/neo4j.module';
+import { Tribe, TribeSchema } from '../entities/tribe/tribe.entity';
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { Neo4jModule } from '../neo4j/neo4j.module';
     MongooseModule.forFeature([
       { name: Post.name, schema: PostSchema },
       { name: Membership.name, schema: MembershipSchema },
-      { name: User.name, schema: UserSchema }
+      { name: User.name, schema: UserSchema },
+      { name: Tribe.name, schema: TribeSchema }
     ]),
     ClientsModule.registerAsync([
       {

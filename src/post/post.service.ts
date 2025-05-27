@@ -8,6 +8,7 @@ import { ClientKafka } from '@nestjs/microservices';
 import { Membership, MembershipStatus } from '../entities/membership/membership.entity';
 import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
+import { Tribe, TribeDocument } from '../entities/tribe/tribe.entity';
 
 export interface CreatePostData {
   description: string;
@@ -27,20 +28,32 @@ export class PostService {
     @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
-    private neo4jService: Neo4jService
+    private neo4jService: Neo4jService,
+    @InjectModel(Tribe.name)
+    private readonly tribeModel: Model<TribeDocument>
   ) {}
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
     try {
-      // Validate user's membership in the tribe
-      const membership = await this.membershipModel.findOne({
-        user: createPostData.userId,
-        tribe: createPostData.tribeId,
-        status: MembershipStatus.ACTIVE
-      });
+      // First check if user is the founder of the tribe
+      const tribe = await this.tribeModel.findById(createPostData.tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
 
-      if (!membership) {
-        throw new ForbiddenException('User must be an active member of the tribe to create posts');
+      const isFounder = tribe.founder.toString() === createPostData.userId.toString();
+      
+      // If not founder, check for active membership
+      if (!isFounder) {
+        const membership = await this.membershipModel.findOne({
+          user: createPostData.userId,
+          tribe: createPostData.tribeId,
+          status: MembershipStatus.ACTIVE
+        });
+
+        if (!membership) {
+          throw new ForbiddenException('User must be an active member of the tribe to create posts');
+        }
       }
 
       // Validate image size and dimensions

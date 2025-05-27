@@ -111,5 +111,58 @@ export class MembershipService {
         return "Membership deleted successfully";
       }
 
+    /**
+     * Get all tribes where a user is either a founder or an active member
+     * @param userId The ID of the user
+     * @returns Array of tribes with populated founder and memberships
+     */
+    async getUserTribes(userId: string): Promise<any[]> {
+      try {
+        // First, find all tribes where the user is the founder
+        const foundedTribes = await this.tribeService.findByFounderId(userId);
+
+        // Then, find all tribes where the user is an active member
+        const memberships = await this.membershipModel
+          .find({
+            user: new Types.ObjectId(userId),
+            status: MembershipStatus.ACTIVE
+          })
+          .populate({
+            path: 'tribe',
+            populate: [
+              {
+                path: 'founder',
+                select: 'username name surname profilePhoto'
+              },
+              {
+                path: 'memberships',
+                populate: {
+                  path: 'user',
+                  select: 'username name surname profilePhoto'
+                }
+              }
+            ]
+          })
+          .lean()
+          .exec();
+
+        // Extract tribes from memberships
+        const memberTribes = memberships.map(m => m.tribe);
+
+        // Combine and deduplicate tribes
+        const allTribes = [...foundedTribes];
+        memberTribes.forEach(tribe => {
+          if (!allTribes.some(t => t._id.toString() === tribe._id.toString())) {
+            allTribes.push(tribe);
+          }
+        });
+
+        // Sort tribes by creation date (newest first)
+        return allTribes.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      } catch (error) {
+        console.error('Error in getUserTribes:', error);
+        throw error;
+      }
+    }
 
 }

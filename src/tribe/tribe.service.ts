@@ -619,4 +619,24 @@ export class TribeService {
 
     // Add content moderation logic here
   }
+
+  async findByFounderId(founderId: string): Promise<Tribe[]> {
+    try {
+      return this.tribeModel
+        .find({ founder: new Types.ObjectId(founderId) })
+        .populate('founder', 'username name surname profilePhoto')
+        .populate({
+          path: 'memberships',
+          populate: {
+            path: 'user',
+            select: 'username name surname profilePhoto'
+          }
+        })
+        .lean()
+        .exec();
+    } catch (error) {
+      console.error('Error in findByFounderId:', error);
+      throw error;
+    }
+  }
 }

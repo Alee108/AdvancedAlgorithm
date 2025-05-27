@@ -105,4 +105,79 @@ export class MermbershipController {
   remove(@Param('id') id: string) {
     return this.membershipService.deleteMembership(id);
   }
+
+  @Get('user/:userId')
+  @ApiOperation({ 
+    summary: 'Get all tribes where a user is a member or founder',
+    description: 'Retrieves all tribes where the user is either a founder or an active member. Includes complete tribe information, founder details, and membership list.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Returns list of tribes with complete information',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          _id: { type: 'string', description: 'Tribe ID' },
+          name: { type: 'string', description: 'Tribe name' },
+          description: { type: 'string', description: 'Tribe description' },
+          visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'], description: 'Tribe visibility' },
+          profilePhoto: { type: 'string', description: 'URL to tribe profile photo' },
+          founder: {
+            type: 'object',
+            properties: {
+              _id: { type: 'string', description: 'Founder ID' },
+              username: { type: 'string', description: 'Founder username' },
+              name: { type: 'string', description: 'Founder name' },
+              surname: { type: 'string', description: 'Founder surname' },
+              profilePhoto: { type: 'string', description: 'URL to founder profile photo' }
+            }
+          },
+          memberships: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                user: {
+                  type: 'object',
+                  properties: {
+                    _id: { type: 'string', description: 'User ID' },
+                    username: { type: 'string', description: 'Username' },
+                    name: { type: 'string', description: 'User name' },
+                    surname: { type: 'string', description: 'User surname' },
+                    profilePhoto: { type: 'string', description: 'URL to user profile photo' }
+                  }
+                },
+                role: { type: 'string', enum: ['FOUNDER', 'MODERATOR', 'MEMBER'], description: 'User role in tribe' },
+                status: { type: 'string', enum: ['ACTIVE', 'PENDING'], description: 'Membership status' },
+                joinedAt: { type: 'string', format: 'date-time', description: 'When user joined the tribe' }
+              }
+            }
+          },
+          createdAt: { type: 'string', format: 'date-time', description: 'When tribe was created' },
+          updatedAt: { type: 'string', format: 'date-time', description: 'When tribe was last updated' }
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async getUserTribes(
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
+    try {
+      // Verify that the requesting user is either the target user or has admin rights
+      if (req.user.sub !== userId) {
+        throw new UnauthorizedException('You can only view your own tribes');
+      }
+
+      return this.membershipService.getUserTribes(userId);
+    } catch (error) {
+      console.error('Error in getUserTribes controller:', error);
+      throw error;
+    }
+  }
 }
