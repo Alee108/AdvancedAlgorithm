@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile, Inject, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile, Inject, Req, Query, BadRequestException } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CommentsService } from '../comments/comments.service';
 import { CreatePostDto, UpdatePostDto } from './post.dto';
@@ -15,6 +15,7 @@ import { CreatePostData } from './post.service';
 import { ClientKafka } from '@nestjs/microservices';
 import sharp from 'sharp';
 import { FilterPostDto } from './dto/post.filter.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('posts')
 @ApiBearerAuth()
@@ -28,10 +29,12 @@ export class PostController {
   ) {}
 
   @Post()
+  @Throttle({ default: { limit: 5, ttl: 60 } }) // 5 posts per minute
   @ApiOperation({ summary: 'Create a new post' })
   @ApiResponse({ status: 201, description: 'Post created successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden - User must be a member of the tribe' })
+  @ApiResponse({ status: 429, description: 'Too Many Requests - Rate limit exceeded' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -54,24 +57,33 @@ export class PostController {
       if (!file) {
         throw new Error('Image file is required');
       }
-  
-      const base64Image = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
-  
+
+      // Process image with sharp
+      const processedImage = await sharp(file.buffer)
+        .resize(1200, 1200, { // Max dimensions
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 80 }) // Convert to JPEG with 80% quality
+        .toBuffer();
+
+      const base64Image = `data:${file.mimetype};base64,${processedImage.toString('base64')}`;
+
       const postData = {
         ...createPostDto,
         base64Image,
         userId: new Types.ObjectId(req.user.sub),
         tribeId: new Types.ObjectId(createPostDto.tribeId),
       };
-  
+
       const img = await this.postService.create(postData);
-  
+
       this.kafkaClient.emit('photo-upload', JSON.stringify({
         userId: req.user.sub,
         photoId: img.id,
         imageUrl: img.base64Image,
       }));
-  
+
       return img;
     } catch (error) {
       console.error('Error creating post:', error);

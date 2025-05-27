@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CommentsModule } from 'src/comments/comments.module';
 import { Membership, MembershipSchema } from '../entities/membership/membership.entity';
 import { User, UserSchema } from '../entities/users/users.entity';
+import { Neo4jModule } from '../neo4j/neo4j.module';
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { User, UserSchema } from '../entities/users/users.entity';
         }),
       },
     ]),
-    CommentsModule
+    CommentsModule,
+    Neo4jModule
   ],
   controllers: [PostController],
   providers: [PostService],

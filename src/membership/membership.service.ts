@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Membership, MembershipDocument, MembershipStatus } from 'src/entities/membership/membership.entity';
 import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { identity } from 'rxjs';
 import { TribeService } from 'src/tribe/tribe.service';
 import e from 'express';
+import { Post, PostDocument } from 'src/entities/post/post.entity';
 
 @Injectable()
 export class MembershipService {
@@ -13,6 +14,7 @@ export class MembershipService {
       constructor(
         @InjectModel(Membership.name) private membershipModel: Model<MembershipDocument>,
         private readonly tribeService: TribeService,
+        @InjectModel(Post.name) private postModel: Model<PostDocument>,
       ) {}
     
      
@@ -78,6 +80,19 @@ export class MembershipService {
         membership.status = MembershipStatus.INACTIVE;
         membership.leftAt = new Date();
         const updatedMembership = await membership.save();
+
+        // Archive all user's posts in this tribe
+        await this.postModel.updateMany(
+          {
+            userId: new Types.ObjectId(userId),
+            tribeId: new Types.ObjectId(tribeId),
+            archived: false
+          },
+          {
+            $set: { archived: true }
+          }
+        );
+
         return updatedMembership;
     }
 

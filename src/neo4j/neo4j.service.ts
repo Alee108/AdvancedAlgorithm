@@ -21,6 +21,10 @@ export class Neo4jService implements OnModuleDestroy {
     );
   }
 
+  getSession(): Session {
+    return this.driver.session();
+  }
+
   async createUser(userId: string, username: string, name: string, surname: string): Promise<void> {
     const session: Session = this.driver.session();
     try {
@@ -66,6 +70,81 @@ export class Neo4jService implements OnModuleDestroy {
         `,
         { followerId, followingId },
       );
+    } finally {
+      await session.close();
+    }
+  }
+
+  async createOrUpdateUserInterest(userId: string, tag: string, weight: number = 1): Promise<void> {
+    const session: Session = this.driver.session();
+    try {
+      await session.run(
+        `
+        MERGE (u:User {id: $userId})
+        MERGE (t:Tag {name: $tag})
+        MERGE (u)-[r:INTERESTED_IN]->(t)
+        ON CREATE SET r.weight = $weight
+        ON MATCH SET r.weight = r.weight + $weight
+        `,
+        { userId, tag, weight },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  async removeUserInterest(userId: string, tag: string): Promise<void> {
+    const session: Session = this.driver.session();
+    try {
+      await session.run(
+        `
+        MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:Tag {name: $tag})
+        DELETE r
+        `,
+        { userId, tag },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  async getRelatedTags(tag: string, limit: number = 5): Promise<string[]> {
+    const session: Session = this.driver.session();
+    try {
+      const result = await session.run(
+        `
+        MATCH (t1:Tag {name: $tag})<-[:INTERESTED_IN]-(u:User)-[:INTERESTED_IN]->(t2:Tag)
+        WHERE t1 <> t2
+        WITH t2, count(*) as cooccurrence
+        RETURN t2.name as tag
+        ORDER BY cooccurrence DESC
+        LIMIT $limit
+        `,
+        { tag, limit },
+      );
+
+      return result.records.map(record => record.get('tag'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  async getSimilarUsers(userId: string, limit: number = 5): Promise<string[]> {
+    const session: Session = this.driver.session();
+    try {
+      const result = await session.run(
+        `
+        MATCH (u1:User {id: $userId})-[:INTERESTED_IN]->(t:Tag)<-[:INTERESTED_IN]-(u2:User)
+        WHERE u1 <> u2
+        WITH u2, count(*) as commonInterests
+        RETURN u2.id as userId
+        ORDER BY commonInterests DESC
+        LIMIT $limit
+        `,
+        { userId, limit },
+      );
+
+      return result.records.map(record => record.get('userId'));
     } finally {
       await session.close();
     }

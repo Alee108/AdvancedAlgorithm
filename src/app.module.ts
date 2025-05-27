@@ -10,6 +10,8 @@ import { PostModule } from './post/post.module';
 import { CommentsModule } from './comments/comments.module';
 import { TribeModule } from './tribe/tribe.module';
 import { MembershipModule } from './membership/membership.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { RecommendationModule } from './recommendation/recommendation.module';
 
 dotenv.config();
 
@@ -26,7 +28,12 @@ dotenv.config();
     RedisModule,
     CommentsModule,
     TribeModule,
-    MembershipModule
+    MembershipModule,
+    RecommendationModule,
+    ThrottlerModule.forRoot([{
+      ttl: 60,
+      limit: 5,
+    }])
   ],
   controllers: [],
 })

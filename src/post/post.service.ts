@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { ClientKafka } from '@nestjs/microservices';
 import { Membership, MembershipStatus } from '../entities/membership/membership.entity';
 import { User, UserDocument } from '../entities/users/users.entity';
+import { Neo4jService } from '../neo4j/neo4j.service';
 
 export interface CreatePostData {
   description: string;
@@ -26,6 +27,7 @@ export class PostService {
     @Inject('KAFKA_CLIENT') private readonly kafkaClient: ClientKafka,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private neo4jService: Neo4jService
   ) {}
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
@@ -41,15 +43,58 @@ export class PostService {
         throw new ForbiddenException('User must be an active member of the tribe to create posts');
       }
 
+      // Validate image size and dimensions
+      const imageBuffer = Buffer.from(createPostData.base64Image.split(',')[1], 'base64');
+      const metadata = await sharp(imageBuffer).metadata();
+      
+      if (!metadata.width || !metadata.height) {
+        throw new BadRequestException('Could not determine image dimensions');
+      }
+
+      if (metadata.width > 4096 || metadata.height > 4096) {
+        throw new BadRequestException('Image dimensions must not exceed 4096x4096 pixels');
+      }
+
+      if (imageBuffer.length > 5 * 1024 * 1024) { // 5MB
+        throw new BadRequestException('Image size must not exceed 5MB');
+      }
+
+      // Check for profanity in description (you can implement your own profanity filter)
+      const hasProfanity = await this.checkForProfanity(createPostData.description);
+      if (hasProfanity) {
+        throw new BadRequestException('Post description contains inappropriate content');
+      }
+
       // Create the post
       const post = new this.postModel(createPostData);
-      return post.save();
+      const savedPost = await post.save();
+
+      // Create tag nodes in Neo4j for post tags
+      if (savedPost.metadata?.keywords) {
+        for (const tag of savedPost.metadata.keywords) {
+          await this.neo4jService.createOrUpdateUserInterest(
+            savedPost.userId.toString(),
+            tag,
+            1
+          );
+        }
+      }
+
+      return savedPost;
     } catch (error) {
-      if (error instanceof ForbiddenException) {
+      if (error instanceof ForbiddenException || error instanceof BadRequestException) {
         throw error;
       }
       throw new BadRequestException('Error creating post: ' + error.message);
     }
+  }
+
+  private async checkForProfanity(text: string): Promise<boolean> {
+    // Implement your profanity filter here
+    // This is a simple example - you should use a proper profanity filter library
+    const profanityList = ['badword1', 'badword2']; // Add your profanity list
+    const words = text.toLowerCase().split(/\s+/);
+    return words.some(word => profanityList.includes(word));
   }
 
   async findAll(): Promise<PostDocument[]> {
@@ -136,15 +181,14 @@ export class PostService {
       if (!hasLiked) {
         post.likes.push(userObjectId);
         await post.save();
-      }
 
-      // Emit event with retry logic
-      await this.emitKafkaEvent('user-interaction-topic', {
-        userId,
-        tag: post.metadata.keywords,
-        interactionType: 'LIKE',
-        timestamp: Date.now(),
-      });
+        // Update user interests in Neo4j based on post tags
+        if (post.metadata?.keywords) {
+          for (const tag of post.metadata.keywords) {
+            await this.neo4jService.createOrUpdateUserInterest(userId, tag, 2); // Higher weight for likes
+          }
+        }
+      }
 
       return post;
     } catch (error) {
@@ -183,8 +227,7 @@ export class PostService {
     }
     return this.postModel
       .find({ 
-        userId: new Types.ObjectId(userId),
-        archived: false 
+        userId: new Types.ObjectId(userId)
       })
       .populate('userId', 'name surname username profilePhoto')
       .populate('tribeId', 'name')
