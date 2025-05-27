@@ -30,7 +30,7 @@ export class PostService {
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
     try {
-      // Verify user's membership in the tribe
+      // Validate user's membership in the tribe
       const membership = await this.membershipModel.findOne({
         user: createPostData.userId,
         tribe: createPostData.tribeId,
@@ -38,25 +38,17 @@ export class PostService {
       });
 
       if (!membership) {
-        throw new ForbiddenException('You must be an active member of the tribe to create posts');
+        throw new ForbiddenException('User must be an active member of the tribe to create posts');
       }
 
-      const createdPost = new this.postModel({
-        ...createPostData,
-        archived: false,
-        metadata: {
-          sentiment: null,
-          keywords: [],
-          language: null,
-          category: null,
-          createdAt: null
-        },
-      });
-      const savedPost = await createdPost.save();
-      return savedPost;
+      // Create the post
+      const post = new this.postModel(createPostData);
+      return post.save();
     } catch (error) {
-      console.error('Error in post service create:', error);
-      throw error;
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new BadRequestException('Error creating post: ' + error.message);
     }
   }
 
@@ -104,6 +96,30 @@ export class PostService {
     }
   }
 
+  private async emitKafkaEvent(topic: string, payload: any): Promise<void> {
+    try {
+      const maxRetries = 3;
+      let retries = 0;
+
+      while (retries < maxRetries) {
+        try {
+          await this.kafkaClient.emit(topic, JSON.stringify(payload)).toPromise();
+          return;
+        } catch (error) {
+          retries++;
+          if (retries === maxRetries) {
+            throw error;
+          }
+          // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+        }
+      }
+    } catch (error) {
+      // Log the error but don't fail the operation
+      console.error(`Failed to emit Kafka event to ${topic}:`, error);
+    }
+  }
+
   async addLike(postId: string, userId: string): Promise<PostDocument> {
     try {
       const post = await this.findOne(postId);
@@ -119,15 +135,16 @@ export class PostService {
 
       if (!hasLiked) {
         post.likes.push(userObjectId);
-        return post.save();
+        await post.save();
       }
 
-      this.kafkaClient.emit('user-interaction-topic', JSON.stringify({
+      // Emit event with retry logic
+      await this.emitKafkaEvent('user-interaction-topic', {
         userId,
         tag: post.metadata.keywords,
         interactionType: 'LIKE',
         timestamp: Date.now(),
-      }));
+      });
 
       return post;
     } catch (error) {
@@ -194,8 +211,8 @@ export class PostService {
     try {
       await this.postModel.updateMany(
         {
-          userId: userId,
-          tribeId: tribeId,
+          userId,
+          tribeId,
           archived: false
         },
         {
@@ -203,8 +220,7 @@ export class PostService {
         }
       );
     } catch (error) {
-      console.error('Error archiving user posts:', error);
-      throw error;
+      throw new BadRequestException('Error archiving user posts: ' + error.message);
     }
   }
 

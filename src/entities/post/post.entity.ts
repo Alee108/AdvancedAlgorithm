@@ -81,4 +81,11 @@ export class Post {
   updatedAt: Date;
 }
 
-export const PostSchema = SchemaFactory.createForClass(Post); 
+export const PostSchema = SchemaFactory.createForClass(Post);
+
+// Add compound indexes for common queries
+PostSchema.index({ tribeId: 1, archived: 1 });
+PostSchema.index({ userId: 1, archived: 1 });
+PostSchema.index({ createdAt: -1 });
+PostSchema.index({ likes: -1 });
+PostSchema.index({ comments: -1 }); 

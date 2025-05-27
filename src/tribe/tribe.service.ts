@@ -1,14 +1,13 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Tribe } from '../entities/tribe/tribe.entity';
+import { Model, Types } from 'mongoose';
+import { Tribe, TribeVisibility } from '../entities/tribe/tribe.entity';
 import { User } from '../entities/users/users.entity';
 import { CreateTribeDto } from './dto/create-tribe.dto';
 import { UpdateTribeDto } from './dto/update-tribe.dto';
 import { UpdateTribeVisibilityDto } from './dto/update-tribe-visibility.dto';
 import { Membership, MembershipStatus, TribeRole } from '../entities/membership/membership.entity';
 import { Post } from '../entities/post/post.entity';
-import { Types } from 'mongoose';
 import { PostService } from '../post/post.service';
 
 @Injectable()
@@ -549,5 +548,51 @@ export class TribeService {
       console.error('Error in search tribes service:', error);
       throw new BadRequestException('Error searching tribes: ' + error.message);
     }
+  }
+
+  private async validateTribeRole(tribeId: string, userId: string, allowedRoles: TribeRole[]): Promise<void> {
+    const membership = await this.membershipModel.findOne({
+      tribe: tribeId,
+      user: userId,
+      status: MembershipStatus.ACTIVE
+    });
+
+    if (!membership || !allowedRoles.includes(membership.role)) {
+      throw new ForbiddenException('Insufficient permissions for this operation');
+    }
+  }
+
+  async updateTribeVisibility(tribeId: string, userId: string, visibility: TribeVisibility): Promise<Tribe> {
+    await this.validateTribeRole(tribeId, userId, [TribeRole.FOUNDER, TribeRole.MODERATOR]);
+    
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    tribe.visibility = visibility;
+    return tribe.save();
+  }
+
+  async pinPost(tribeId: string, userId: string, postId: string): Promise<void> {
+    await this.validateTribeRole(tribeId, userId, [TribeRole.FOUNDER, TribeRole.MODERATOR]);
+    
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Add pinned post logic here
+  }
+
+  async moderateContent(tribeId: string, userId: string, postId: string, action: 'hide' | 'delete'): Promise<void> {
+    await this.validateTribeRole(tribeId, userId, [TribeRole.FOUNDER, TribeRole.MODERATOR]);
+    
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Add content moderation logic here
   }
 }

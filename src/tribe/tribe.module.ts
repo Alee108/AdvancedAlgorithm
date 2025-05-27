@@ -6,6 +6,7 @@ import { Tribe, TribeSchema } from '../entities/tribe/tribe.entity';
 import { User, UserSchema } from '../entities/users/users.entity';
 import { Membership, MembershipSchema } from '../entities/membership/membership.entity';
 import { Post, PostSchema } from '../entities/post/post.entity';
+import { PostModule } from '../post/post.module';
 
 @Module({
   imports: [
@@ -14,7 +15,8 @@ import { Post, PostSchema } from '../entities/post/post.entity';
       { name: User.name, schema: UserSchema },
       { name: Membership.name, schema: MembershipSchema },
       { name: Post.name, schema: PostSchema }
-    ])
+    ]),
+    PostModule
   ],
   controllers: [TribeController],
   providers: [TribeService],

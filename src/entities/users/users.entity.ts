@@ -22,6 +22,12 @@ export enum Visibility {
   Private = 'private'
 }
 
+export enum UserRole {
+  USER = 'user',
+  ADMIN = 'admin',
+  MODERATOR = 'moderator'
+}
+
 export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
@@ -90,11 +96,11 @@ export class User {
 
   @ApiProperty({ 
     description: 'User\'s role in the system',
-    enum: Role,
-    example: Role.User
+    enum: UserRole,
+    example: UserRole.USER
   })
-  @Prop({ type: String, enum: Role, default: Role.User })
-  role: Role;
+  @Prop({ type: String, enum: UserRole, default: UserRole.USER })
+  role: UserRole;
 
   @ApiProperty({ description: 'User visibility', enum: Visibility })
   @Prop({ required: true, enum: Visibility, default: Visibility.Public })
@@ -110,9 +116,22 @@ export class User {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Membership' }] })
   memberships: Membership[];
 
+  @ApiProperty({ description: 'Current tribe ID' })
+  @Prop({ type: Types.ObjectId, ref: 'Tribe', default: null })
+  currentTribeId: Types.ObjectId | null;
+
   @ApiProperty({ description: 'Tribes founded by the user' })
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Tribe' }] })
   foundedTribes: Tribe[];
+
+  @Prop({ type: String, default: null })
+  avatar: string;
+
+  @Prop({ type: Boolean, default: false })
+  isVerified: boolean;
+
+  @Prop({ type: Date, default: null })
+  lastLoginAt: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
