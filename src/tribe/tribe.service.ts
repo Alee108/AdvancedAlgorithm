@@ -34,12 +34,17 @@ export class TribeService {
         throw new NotFoundException('Founder not found');
       }
 
-      const memberships = await this.membershipModel.find({ user: new Types.ObjectId(founderId)})
+      console.log(`Checking memberships for user ${founderId}`);
+      const memberships = await this.membershipModel.find({ user: new Types.ObjectId(founderId)});
+      console.log(`Found ${memberships.length} memberships:`, JSON.stringify(memberships, null, 2));
+
       if(memberships.length > 0) {
-        if(memberships.some((elem)=>elem.status ==   MembershipStatus.ACTIVE)) {
+        const activeMemberships = memberships.filter(elem => elem.status === MembershipStatus.ACTIVE);
+        console.log(`Found ${activeMemberships.length} active memberships`);
+        
+        if(activeMemberships.length > 0) {
           throw new BadRequestException('You are already a member of a tribe');
         }
-
       }
       // Create the tribe
       const tribe = new this.tribeModel({
@@ -512,23 +517,42 @@ export class TribeService {
   }
 
   async rejectPastMemberships(user: User) {
-    const founderMembership = await this.membershipModel.find({
-      user: user._id,
-      status: { $in: [MembershipStatus.PENDING] }
-    });
-    console.log("Found " + founderMembership.length + " Membership");
+    console.log(`Cleaning up memberships for user ${user._id}`);
     
-    const pastMemberships = await this.membershipModel.updateMany(
+    // First, find all memberships for this user
+    const allMemberships = await this.membershipModel.find({
+      user: user._id,
+      status: { $in: [MembershipStatus.PENDING, MembershipStatus.ACTIVE] }
+    });
+    console.log(`Found ${allMemberships.length} total memberships to clean up`);
+
+    // Update all pending and active memberships to rejected
+    const updateResult = await this.membershipModel.updateMany(
       { 
         user: new Types.ObjectId(user._id),
-        status: { $in: [MembershipStatus.PENDING] }
+        status: { $in: [MembershipStatus.PENDING, MembershipStatus.ACTIVE] }
       },
-      { status: MembershipStatus.REJECTED }
+      { 
+        status: MembershipStatus.REJECTED,
+        leftAt: new Date()
+      }
     ).exec();
     
-    if (pastMemberships) {
-      console.log(`Updated ${pastMemberships.modifiedCount} past memberships to REJECTED`);
+    console.log(`Updated ${updateResult.modifiedCount} memberships to REJECTED status`);
+    
+    // Also remove this user from any tribe's memberships array
+    const tribes = await this.tribeModel.find({
+      'memberships.user': user._id
+    });
+    
+    for (const tribe of tribes) {
+      await this.tribeModel.updateOne(
+        { _id: tribe._id },
+        { $pull: { memberships: { user: user._id } } }
+      );
     }
+    
+    console.log(`Cleaned up user from ${tribes.length} tribes' membership arrays`);
   }
 
   async searchTribes(query: string): Promise<Tribe[]> {
