@@ -185,28 +185,17 @@ export class RecommendationService {
         .populate('tribeId', 'name')
         .populate('comments')
         .sort({ 
-          'likes': -1,
-          'comments': -1,
-          'createdAt': -1 
+          createdAt: -1 
         })
         .limit(limit)
         .exec();
 
-      // If we don't have enough popular posts, get recent posts
-      if (popularPosts.length < limit) {
-        const recentPosts = await this.postModel
-          .find({ 
-            _id: { $nin: popularPosts.map(p => p._id) }
-          })
-          .populate('userId', 'name surname username profilePhoto')
-          .populate('tribeId', 'name')
-          .populate('comments')
-          .sort({ createdAt: -1 })
-          .limit(limit - popularPosts.length)
-          .exec();
-        this.logger.debug(`Fallback: Found ${recentPosts.length} recent posts to supplement popular posts`);
-        return [...popularPosts, ...recentPosts];
-      }
+      // Sort the results in memory by engagement metrics
+      popularPosts.sort((a, b) => {
+        const aScore = (a.likes?.length || 0) + (a.comments?.length || 0);
+        const bScore = (b.likes?.length || 0) + (b.comments?.length || 0);
+        return bScore - aScore;
+      });
 
       return popularPosts;
     } catch (error) {

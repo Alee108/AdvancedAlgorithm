@@ -14,6 +14,9 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
     allowedHeaders: 'Content-Type, Accept, Authorization',
+    exposedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
   });
 
   const microservice = await NestFactory.createMicroservice<MicroserviceOptions>(

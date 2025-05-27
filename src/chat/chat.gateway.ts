@@ -18,7 +18,16 @@ import { Inject } from '@nestjs/common';
 import { createClient } from 'redis';
 
 @ApiBearerAuth()
-@WebSocketGateway()
+@WebSocketGateway({
+  cors: {
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  },
+  namespace: '/',
+  transports: ['websocket'],
+})
 @ApiTags('Chat')
 export class ChatGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
@@ -110,16 +119,27 @@ export class ChatGateway
   }
 
   private extractTokenFromHandshake(client: Socket): string | null {
-    const authHeader = client.handshake.headers.authorization;
-    if (!authHeader) {
+    try {
+      // Try to get token from auth object first (socket.io-client format)
+      if (client.handshake.auth && client.handshake.auth.token) {
+        return client.handshake.auth.token;
+      }
+
+      // Fallback to headers
+      const authHeader = client.handshake.headers.authorization;
+      if (!authHeader) {
+        return null;
+      }
+
+      const [type, token] = authHeader.split(' ');
+      if (type !== 'Bearer') {
+        return null;
+      }
+
+      return token;
+    } catch (error) {
+      this.logger.error(`Error extracting token: ${error.message}`);
       return null;
     }
-
-    const [type, token] = authHeader.split(' ');
-    if (type !== 'Bearer') {
-      return null;
-    }
-
-    return token;
   }
 }

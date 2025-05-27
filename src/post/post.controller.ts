@@ -40,7 +40,7 @@ export class PostController {
     FileInterceptor('image', {
       storage: memoryStorage(),
       fileFilter: (req, file, callback) => {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp|PNG|JPG)$/)) {
           return callback(new Error('Only image files are allowed!'), false);
         }
         callback(null, true);
@@ -78,11 +78,11 @@ export class PostController {
 
       const img = await this.postService.create(postData);
 
-      this.kafkaClient.emit('photo-upload', JSON.stringify({
+      /*this.kafkaClient.emit('photo-upload', JSON.stringify({
         userId: req.user.sub,
         photoId: img.id,
         imageUrl: img.base64Image,
-      }));
+      }));*/
 
       return img;
     } catch (error) {
@@ -122,7 +122,7 @@ export class PostController {
         },
       }),
       fileFilter: (req, file, callback) => {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp|PNG|JPG)$/)) {
           return callback(new Error('Only image files are allowed!'), false);
         }
         callback(null, true);
