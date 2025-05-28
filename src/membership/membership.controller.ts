@@ -1,11 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
 import { MembershipService } from './membership.service';
 import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { MembershipStatus } from 'src/entities/membership/membership.entity';
-import { TribeVisibility } from 'src/entities/tribe/tribe.entity';
 
 @ApiTags('membership')
 @Controller('membership')
@@ -17,26 +16,16 @@ export class MembershipController {
   @Get()
   @ApiOperation({ summary: 'Get all memberships' })
   @ApiResponse({ status: 200, description: 'Return all memberships.' })
-  async findAll() {
-    try {
-      return await this.membershipService.findAll();
-    } catch (error) {
-      console.error('Error in findAll memberships:', error);
-      throw error;
-    }
+  findAll() {
+    return this.membershipService.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a membership by id' })
   @ApiResponse({ status: 200, description: 'Return the membership.' })
   @ApiResponse({ status: 404, description: 'Membership not found.' })
-  async findOne(@Param('id') id: string) {
-    try {
-      return await this.membershipService.findById(id);
-    } catch (error) {
-      console.error('Error in findOne membership:', error);
-      throw error;
-    }
+  findOne(@Param('id') id: string) {
+    return this.membershipService.findById(id);
   }
 
   @Patch(':id')
@@ -46,31 +35,18 @@ export class MembershipController {
   async update(
     @Param('id') id: string,
     @Body() updateMembership: UpdateMembershipDto,
-    @Req() req: any
   ) {
     try {
       if (!id) {
-        throw new BadRequestException('Membership ID is required');
+        throw new UnauthorizedException('Membership ID is required');
       }
-
-      // Verify user has permission to update this membership
-      const membership = await this.membershipService.findById(id);
-      if (!membership) {
-        throw new NotFoundException(`Membership with ID ${id} not found`);
-      }
-
-      // Only tribe founder or the user themselves can update the membership
-      const tribe = await this.membershipService.getTribeForMembership(id);
-      if (tribe.founder.toString() !== req.user.sub && membership.user.toString() !== req.user.sub) {
-        throw new ForbiddenException('You do not have permission to update this membership');
-      }
-
+      console.log('Updating membership with ID:', id);
       const updateData = {
         ...updateMembership,
         updatedAt: new Date(),
       };
       
-      return await this.membershipService.update(id, updateData);
+      return this.membershipService.update(id, updateData);
     } catch (error) {
       console.error('Error updating membership:', error);
       throw error;
@@ -80,122 +56,84 @@ export class MembershipController {
   @Get('tribe/:tribeId')
   @ApiOperation({ summary: 'Get all memberships by tribe' })
   @ApiResponse({ status: 200, description: 'Return all memberships by tribe' })
-  async getAllMembershipsByTribe(
-    @Param('tribeId') tribeId: string,
-    @Req() req: any
-  ) {
-    try {
-      // Verify user has permission to view tribe memberships
-      const hasAccess = await this.membershipService.canUserAccessTribe(tribeId, req.user.sub);
-      if (!hasAccess) {
-        throw new ForbiddenException('You do not have permission to view this tribe\'s memberships');
-      }
-
-      return await this.membershipService.getAllMembershipsByTribe(tribeId);
-    } catch (error) {
-      console.error('Error getting tribe memberships:', error);
-      throw error;
-    }
+  getAllMembershipsByTribe(@Param('tribeId') tribeId: string) {
+    return this.membershipService.getAllMembershipsByTribe(tribeId);
   }
 
   @Get('tribe/:tribeId/status/:status')
   @ApiOperation({ summary: 'Get all memberships by tribe and status' })
   @ApiResponse({ status: 200, description: 'Return memberships by tribe and status.' })
-  async getAllMembershipsByTribeAndStatus(
+  getAllMembershipsByTribeAndStatus(
     @Param('tribeId') tribeId: string,
-    @Param('status') status: MembershipStatus,
-    @Req() req: any
+    @Param('status') status: MembershipStatus
   ) {
-    try {
-      // Verify user has permission to view tribe memberships
-      const hasAccess = await this.membershipService.canUserAccessTribe(tribeId, req.user.sub);
-      if (!hasAccess) {
-        throw new ForbiddenException('You do not have permission to view this tribe\'s memberships');
-      }
-
-      return await this.membershipService.getAllMembershipsByTribeAndStatus(tribeId, status);
-    } catch (error) {
-      console.error('Error getting tribe memberships by status:', error);
-      throw error;
-    }
+    return this.membershipService.getAllMembershipsByTribeAndStatus(tribeId, status);
   }
 
   @Get('user/:userId/requests')
   @ApiOperation({ summary: 'Get all membership requests by user' })
   @ApiResponse({ status: 200, description: 'Return all membership requests by user.' })
-  async getAllMembershipRequestsByUserId(
-    @Param('userId') userId: string,
-    @Req() req: any
-  ) {
-    try {
-      // Verify user is requesting their own data
-      if (req.user.sub !== userId) {
-        throw new ForbiddenException('You can only view your own membership requests');
-      }
-      
-      return await this.membershipService.getAllMembershipRequestsByUserId(userId);
-    } catch (error) {
-      console.error('Error getting user membership requests:', error);
-      throw error;
-    }
+  getAllMembershipRequestsByUserId(@Param('userId') userId: string) {
+    return this.membershipService.getAllMembershipRequestsByUserId(userId);
   }
 
   @Patch('exit/:userId/:tribeId')
   @ApiOperation({ summary: 'Exit from tribe' })
   @ApiResponse({ status: 200, description: 'User exited from tribe.' })
-  async exitFromTribe(
+  exitFromTribe(
     @Param('userId') userId: string,
-    @Param('tribeId') tribeId: string,
-    @Req() req: any
+    @Param('tribeId') tribeId: string
   ) {
-    try {
-      // Verify user is exiting their own membership
-      if (req.user.sub !== userId) {
-        throw new ForbiddenException('You can only exit from your own memberships');
-      }
-
-      return await this.membershipService.exitFromTribe(userId, tribeId);
-    } catch (error) {
-      console.error('Error exiting from tribe:', error);
-      throw error;
-    }
+    return this.membershipService.exitFromTribe(userId, tribeId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a pending membership' })
   @ApiResponse({ status: 200, description: 'Membership deleted successfully' })
   @ApiResponse({ status: 404, description: 'Membership not found' })
-  async remove(
-    @Param('id') id: string,
-    @Req() req: any
-  ) {
-    try {
-      const membership = await this.membershipService.findById(id);
-      if (!membership) {
-        throw new NotFoundException(`Membership with ID ${id} not found`);
-      }
-
-      // Verify user has permission to delete this membership
-      const tribe = await this.membershipService.getTribeForMembership(id);
-      if (tribe.founder.toString() !== req.user.sub && membership.user.toString() !== req.user.sub) {
-        throw new ForbiddenException('You do not have permission to delete this membership');
-      }
-
-      return await this.membershipService.deleteMembership(id);
-    } catch (error) {
-      console.error('Error deleting membership:', error);
-      throw error;
-    }
+  remove(@Param('id') id: string) {
+    return this.membershipService.deleteMembership(id);
   }
 
   @Get('user/:userId')
   @ApiOperation({ 
     summary: 'Get all tribes where a user is a member or founder',
-    description: 'Retrieves all tribes where the user is either a founder or an active member.'
+    description: 'Retrieves all tribes where the user is an active member. Includes complete tribe information, founder details, and user role.'
   })
-  @ApiResponse({ status: 200, description: 'Returns list of tribes with complete information' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Returns list of tribes with complete information',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          _id: { type: 'string', description: 'Tribe ID' },
+          name: { type: 'string', description: 'Tribe name' },
+          description: { type: 'string', description: 'Tribe description' },
+          visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE', 'CLOSED'], description: 'Tribe visibility' },
+          profilePhoto: { type: 'string', description: 'URL to tribe profile photo' },
+          founder: {
+            type: 'object',
+            properties: {
+              _id: { type: 'string', description: 'Founder ID' },
+              username: { type: 'string', description: 'Founder username' },
+              name: { type: 'string', description: 'Founder name' },
+              surname: { type: 'string', description: 'Founder surname' },
+              profilePhoto: { type: 'string', description: 'URL to founder profile photo' }
+            }
+          },
+          userRole: { type: 'string', enum: ['FOUNDER', 'MODERATOR', 'MEMBER'], description: 'User role in tribe' },
+          joinedAt: { type: 'string', format: 'date-time', description: 'When user joined the tribe' },
+          createdAt: { type: 'string', format: 'date-time', description: 'When tribe was created' },
+          updatedAt: { type: 'string', format: 'date-time', description: 'When tribe was last updated' }
+        }
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
   async getUserTribes(
     @Param('userId') userId: string,
     @Req() req: any
@@ -203,13 +141,21 @@ export class MembershipController {
     try {
       // Verify that the requesting user is either the target user or has admin rights
       if (req.user.sub !== userId) {
-        throw new ForbiddenException('You can only view your own tribes');
+        throw new UnauthorizedException('You can only view your own tribes');
       }
 
-      return await this.membershipService.getUserTribes(userId);
+      return this.membershipService.getUserTribes(userId);
     } catch (error) {
-      console.error('Error in getUserTribes:', error);
+      console.error('Error in getUserTribes controller:', error);
       throw error;
     }
+  }
+
+  @Get('tribe/:tribeId/count')
+  @ApiOperation({ summary: 'Get active members count for a tribe' })
+  @ApiResponse({ status: 200, description: 'Returns the count of active members.' })
+  async getActiveMembersCount(@Param('tribeId') tribeId: string): Promise<{ count: number }> {
+    const count = await this.membershipService.getActiveMembersCount(tribeId);
+    return { count };
   }
 }

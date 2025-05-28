@@ -8,6 +8,7 @@ import { Membership, MembershipSchema } from '../entities/membership/membership.
 import { Post, PostSchema } from '../entities/post/post.entity';
 import { PostModule } from '../post/post.module';
 import { MembershipModule } from '../membership/membership.module';
+import { TribeBusinessRulesService } from './tribe-business-rules.service';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { MembershipModule } from '../membership/membership.module';
     forwardRef(() => MembershipModule)
   ],
   controllers: [TribeController],
-  providers: [TribeService],
-  exports: [TribeService]
+  providers: [TribeService,TribeBusinessRulesService],
+  exports: [TribeService,TribeBusinessRulesService]
 })
 export class TribeModule {} 
