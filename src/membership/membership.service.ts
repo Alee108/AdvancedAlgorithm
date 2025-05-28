@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Inject, forwardRef, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types, ClientSession } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Membership, MembershipDocument, MembershipStatus, TribeRole } from 'src/entities/membership/membership.entity';
 import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { TribeService } from 'src/tribe/tribe.service';
@@ -67,8 +67,8 @@ export class MembershipService {
 
   async getAllMembershipRequestsByUserId(userId: string): Promise<MembershipDocument[]> {
     const memberships = await this.membershipModel
-      .find({ user: userId, status: MembershipStatus.PENDING })
-      .populate('tribe', 'name description profilePhoto')
+      .find({ user: new Types.ObjectId(userId), status: MembershipStatus.PENDING })
+      .populate('tribe', 'name description profilePhoto visibility founder')
       .exec();
     return memberships;
   }
@@ -76,9 +76,7 @@ export class MembershipService {
   /**
    * Exit from tribe - centralized logic for leaving a tribe
    */
-  async exitFromTribe(userId: string, tribeId: string, session?: ClientSession): Promise<MembershipDocument> {
-    const ops = { session } as any;
-    
+  async exitFromTribe(userId: string, tribeId: string): Promise<MembershipDocument> {
     try {
       // Validate that user can leave (not founder)
       await this.businessRules.canLeaveTribe(userId, tribeId);
@@ -104,7 +102,7 @@ export class MembershipService {
       // Update membership status
       membership.status = MembershipStatus.INACTIVE;
       membership.leftAt = new Date();
-      const updatedMembership = await membership.save(ops);
+      const updatedMembership = await membership.save();
 
       // If the tribe is not closed, archive user's posts
       if (tribe.visibility !== TribeVisibility.CLOSED) {
@@ -116,8 +114,7 @@ export class MembershipService {
           },
           {
             $set: { archived: true }
-          },
-          ops
+          }
         );
       }
 

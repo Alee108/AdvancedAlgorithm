@@ -50,9 +50,8 @@ export class TribeService {
         }
       }
 
-      // Start a session for transaction
-      const session = await this.tribeModel.startSession();
-      session.startTransaction();
+      let savedTribe: Tribe | null = null;
+      let savedMembership: Membership | null = null;
 
       try {
         // Create the tribe
@@ -63,10 +62,10 @@ export class TribeService {
         });
 
         // Save the tribe
-        const savedTribe = await tribe.save({ session });
+        savedTribe = await tribe.save();
 
         // Reject any past memberships
-        await this.rejectPastMemberships(founder);
+        await this.rejectPastMemberships(founder._id.toString());
 
         // Create membership for the founder with FOUNDER role
         const membership = new this.membershipModel({
@@ -77,16 +76,13 @@ export class TribeService {
         });
 
         // Save the membership
-        const savedMembership = await membership.save({ session });
+        savedMembership = await membership.save();
 
         // Add the membership to the tribe's memberships array
         await this.tribeModel.findByIdAndUpdate(
           savedTribe._id,
-          { $push: { memberships: savedMembership._id } },
-          { session }
+          { $push: { memberships: savedMembership._id } }
         );
-
-        await session.commitTransaction();
 
         // Populate the founder and memberships fields before returning
         const populatedTribe = await this.tribeModel.findById(savedTribe._id)
@@ -106,10 +102,14 @@ export class TribeService {
 
         return populatedTribe;
       } catch (error) {
-        await session.abortTransaction();
+        // If anything fails, try to clean up
+        if (savedTribe) {
+          await this.tribeModel.findByIdAndDelete(savedTribe._id);
+        }
+        if (savedMembership) {
+          await this.membershipModel.findByIdAndDelete(savedMembership._id);
+        }
         throw error;
-      } finally {
-        session.endSession();
       }
     } catch (error) {
       console.error('Error in create tribe service:', error);
@@ -436,10 +436,8 @@ export class TribeService {
   }
 
   async requestJoin(tribeId: string, userId: string): Promise<Membership> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
-
     try {
+      // Find the tribe
       const tribe = await this.tribeModel.findById(tribeId);
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
@@ -447,86 +445,98 @@ export class TribeService {
 
       // Check if tribe is closed
       if (tribe.visibility === TribeVisibility.CLOSED) {
-        throw new ForbiddenException('This tribe is closed and not accepting new members');
+        throw new BadRequestException('This tribe is closed and not accepting new members');
       }
 
-      // Check if user is already a member using transaction
-      const existingMembership = await this.membershipModel.find({
-        user: new Types.ObjectId(userId),
-        status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
-      }).session(session);
+      let savedMembership: Membership | null = null;
 
-      if (existingMembership.length > 0) {
-        if (existingMembership.some((elem) => elem.status === MembershipStatus.ACTIVE)) {
-          throw new BadRequestException('You are already a member of a tribe');
+      try {
+        // Check if user is already a member
+        const existingMembership = await this.membershipModel.findOne({
+          user: new Types.ObjectId(userId),
+          tribe: new Types.ObjectId(tribeId)
+        });
+
+        if (existingMembership) {
+          if (existingMembership.status === MembershipStatus.ACTIVE) {
+            throw new BadRequestException('You are already a member of this tribe');
+          } else if (existingMembership.status === MembershipStatus.PENDING) {
+            throw new BadRequestException('You already have a pending request to join this tribe');
+          }
         }
-        if (existingMembership.some((req) => req.tribe._id.toString() === tribeId && req.status === MembershipStatus.PENDING)) {
-          throw new BadRequestException('You already have a pending request to join this tribe');
+
+        if(tribe.visibility === TribeVisibility.PUBLIC) {
+          //reject all pending memberships for this user
+          await this.rejectPastMemberships(userId);
         }
+        // Create new membership request
+        const membership = new this.membershipModel({
+          user: new Types.ObjectId(userId),
+          tribe: new Types.ObjectId(tribeId),
+          status: tribe.visibility == 'PUBLIC'? MembershipStatus.ACTIVE: MembershipStatus.PENDING,
+          role: TribeRole.MEMBER
+        });
+
+        // Save the membership
+        savedMembership = await membership.save();
+
+        // Add the membership to the tribe's memberships array
+        
+        await this.tribeModel.findByIdAndUpdate(
+          tribeId,
+          { $push: { memberships: savedMembership._id } }
+        ).exec();
+
+
+        return savedMembership;
+      } catch (error) {
+        // If anything fails, try to clean up
+        if (savedMembership) {
+          await this.membershipModel.findByIdAndDelete(savedMembership._id);
+        }
+        throw error;
       }
-
-      const membership = new this.membershipModel({
-        user: new Types.ObjectId(userId),
-        tribe: new Types.ObjectId(tribeId),
-        status: tribe.visibility === 'PRIVATE' ? MembershipStatus.PENDING : MembershipStatus.ACTIVE,
-        role: TribeRole.MEMBER
-      });
-
-      const savedMembership = await membership.save({ session });
-
-      if (tribe.visibility === 'PUBLIC') {
-        tribe.memberships.push(savedMembership);
-        await tribe.save({ session });
-      }
-
-      await session.commitTransaction();
-      return savedMembership;
     } catch (error) {
-      await session.abortTransaction();
+      console.error('Error in requestJoin service:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
   async leaveTribe(tribeId: string, userId: string): Promise<void> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
-
     try {
+      // Find the tribe
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Check if user is the founder
+      if (tribe.founder.toString() === userId) {
+        throw new BadRequestException('Founder cannot leave the tribe. Please transfer ownership or delete the tribe instead.');
+      }
+
+      // Find the membership
       const membership = await this.membershipModel.findOne({
-        tribe: new Types.ObjectId(tribeId),
         user: new Types.ObjectId(userId),
+        tribe: new Types.ObjectId(tribeId),
         status: MembershipStatus.ACTIVE
-      }).session(session);
+      });
 
       if (!membership) {
         throw new NotFoundException('Active membership not found');
       }
 
-      // Archive all user's posts in this tribe
-      await this.postService.archiveUserPosts(
-        new Types.ObjectId(userId),
-        new Types.ObjectId(tribeId)
-      );
+      // Remove the membership
+      await this.membershipModel.findByIdAndDelete(membership._id);
 
-      // Update membership status
-      membership.status = MembershipStatus.INACTIVE;
-      membership.leftAt = new Date();
-      await membership.save({ session });
-
-      // Remove from tribe's memberships array
-      await this.tribeModel.updateOne(
-        { _id: new Types.ObjectId(tribeId) },
+      // Remove the membership from the tribe's memberships array
+      await this.tribeModel.findByIdAndUpdate(
+        tribeId,
         { $pull: { memberships: membership._id } }
-      ).session(session);
-
-      await session.commitTransaction();
+      );
     } catch (error) {
-      await session.abortTransaction();
+      console.error('Error in leaveTribe service:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
@@ -558,12 +568,12 @@ export class TribeService {
     }
   }
 
-  async rejectPastMemberships(user: User) {
-    console.log(`Cleaning up memberships for user ${user._id}`);
+  async rejectPastMemberships(userId: string) {
+    console.log(`Cleaning up memberships for user ${userId}`);
     
     // First, find all memberships for this user
     const allMemberships = await this.membershipModel.find({
-      user: user._id,
+      user: new Types.ObjectId(userId),
       status: { $in: [MembershipStatus.PENDING, MembershipStatus.ACTIVE] }
     });
     console.log(`Found ${allMemberships.length} total memberships to clean up`);
@@ -571,7 +581,7 @@ export class TribeService {
     // Update all pending and active memberships to rejected
     const updateResult = await this.membershipModel.updateMany(
       { 
-        user: new Types.ObjectId(user._id),
+        user: new Types.ObjectId(userId),
         status: { $in: [MembershipStatus.PENDING, MembershipStatus.ACTIVE] }
       },
       { 
@@ -584,13 +594,13 @@ export class TribeService {
     
     // Also remove this user from any tribe's memberships array
     const tribes = await this.tribeModel.find({
-      'memberships.user': user._id
+      'memberships.user': userId
     });
     
     for (const tribe of tribes) {
       await this.tribeModel.updateOne(
         { _id: tribe._id },
-        { $pull: { memberships: { user: user._id } } }
+        { $pull: { memberships: { user: userId } } }
       );
     }
     
@@ -729,78 +739,49 @@ export class TribeService {
   }
 
   async kickMember(tribeId: string, userId: string, moderatorId: string): Promise<Membership> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
-
     try {
+      // Find the tribe
       const tribe = await this.tribeModel.findById(tribeId);
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
       }
 
-      // Check if the user has permission (founder or moderator)
-      const isFounder = tribe.founder._id.toString() === moderatorId;
-      const isModerator = tribe.memberships.some(membership => 
-        membership.user._id.toString() === moderatorId && 
-        membership.role === TribeRole.MODERATOR
-      );
-
-      if (!isFounder && !isModerator) {
-        throw new ForbiddenException('Only founders and moderators can kick members');
+      // Check if user is the founder
+      if (tribe.founder.toString() === userId) {
+        throw new BadRequestException('Cannot kick the founder from the tribe');
       }
 
-      // Find the membership to kick
+      // Check if moderator has permission
+      await this.validateTribeRole(tribeId, moderatorId, [TribeRole.FOUNDER, TribeRole.MODERATOR]);
+
+      // Find the membership
       const membership = await this.membershipModel.findOne({
-        tribe: new Types.ObjectId(tribeId),
         user: new Types.ObjectId(userId),
+        tribe: new Types.ObjectId(tribeId),
         status: MembershipStatus.ACTIVE
-      }).session(session);
+      });
 
       if (!membership) {
         throw new NotFoundException('Active membership not found');
       }
 
-      // Prevent kicking the founder
-      if (membership.role === TribeRole.FOUNDER) {
-        throw new ForbiddenException('Cannot kick the founder');
-      }
+      // Remove the membership
+      await this.membershipModel.findByIdAndDelete(membership._id);
 
-      // Prevent moderators from kicking other moderators
-      if (isModerator && membership.role === TribeRole.MODERATOR) {
-        throw new ForbiddenException('Moderators cannot kick other moderators');
-      }
-
-      // Archive all user's posts in this tribe
-      await this.postService.archiveUserPosts(
-        new Types.ObjectId(userId),
-        new Types.ObjectId(tribeId)
+      // Remove the membership from the tribe's memberships array
+      await this.tribeModel.findByIdAndUpdate(
+        tribeId,
+        { $pull: { memberships: membership._id } }
       );
 
-      // Update membership status
-      membership.status = MembershipStatus.REJECTED;
-      membership.leftAt = new Date();
-      await membership.save({ session });
-
-      // Remove from tribe's memberships array
-      await this.tribeModel.updateOne(
-        { _id: new Types.ObjectId(tribeId) },
-        { $pull: { memberships: membership._id } }
-      ).session(session);
-
-      await session.commitTransaction();
       return membership;
     } catch (error) {
-      await session.abortTransaction();
+      console.error('Error in kickMember service:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
   async demoteModerator(tribeId: string, userId: string, founderId: string): Promise<Membership> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
-
     try {
       const tribe = await this.tribeModel.findById(tribeId);
       if (!tribe) {
@@ -818,7 +799,7 @@ export class TribeService {
         user: new Types.ObjectId(userId),
         status: MembershipStatus.ACTIVE,
         role: TribeRole.MODERATOR
-      }).session(session);
+      });
 
       if (!membership) {
         throw new NotFoundException('Active moderator membership not found');
@@ -826,15 +807,10 @@ export class TribeService {
 
       // Demote to member
       membership.role = TribeRole.MEMBER;
-      await membership.save({ session });
-
-      await session.commitTransaction();
-      return membership;
+      return membership.save();
     } catch (error) {
-      await session.abortTransaction();
+      console.error('Error in demoteModerator service:', error);
       throw error;
-    } finally {
-      session.endSession();
     }
   }
 
