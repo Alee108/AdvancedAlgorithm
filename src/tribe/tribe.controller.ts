@@ -12,13 +12,17 @@ import { extname } from 'path';
 import * as fs from 'fs';
 import { Tribe } from '../entities/tribe/tribe.entity';
 import { Membership } from '../entities/membership/membership.entity';
+import { MembershipService } from '../membership/membership.service';
 
 @ApiTags('tribes')
 @Controller('tribes')
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class TribeController {
-  constructor(private readonly tribeService: TribeService) {}
+  constructor(
+    private readonly tribeService: TribeService,
+    private readonly membershipService: MembershipService
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new tribe' })
@@ -330,6 +334,24 @@ export class TribeController {
       throw new BadRequestException('User not authenticated');
     }
     return this.tribeService.requestJoin(tribeId, req.user.sub);
+  }
+
+  @Post(':tribeId/leave')
+  @ApiOperation({ summary: 'Leave a tribe' })
+  @ApiResponse({ status: 200, description: 'Successfully left the tribe.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 404, description: 'Tribe or membership not found.' })
+  async leaveTribe(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ): Promise<{ message: string }> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    
+    await this.membershipService.exitFromTribe(req.user.sub, tribeId);
+    return { message: 'Successfully left the tribe' };
   }
 
   @Get(':tribeId/posts')

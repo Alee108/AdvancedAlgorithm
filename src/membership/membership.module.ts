@@ -2,7 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Membership, MembershipSchema } from 'src/entities/membership/membership.entity';
 import { MembershipService } from './membership.service';
-import { MermbershipController } from './membership.controller';
+import { MembershipController } from './membership.controller';
 import { TribeModule } from 'src/tribe/tribe.module';
 import { Post, PostSchema } from 'src/entities/post/post.entity';
 
@@ -14,7 +14,7 @@ import { Post, PostSchema } from 'src/entities/post/post.entity';
     ]),
     forwardRef(() => TribeModule)
   ],
-  controllers: [MermbershipController],
+  controllers: [MembershipController],
   providers: [MembershipService],
   exports: [MembershipService],
 })

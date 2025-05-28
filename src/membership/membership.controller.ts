@@ -1,22 +1,19 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, UseInterceptors, UploadedFile, UnauthorizedException } from '@nestjs/common';
-
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorators';
 import { MembershipService } from './membership.service';
 import { CreateMembershipDto, UpdateMembershipDto } from './DTO/membership.dto';
 import { MembershipStatus } from 'src/entities/membership/membership.entity';
-import { Create } from 'sharp';
 
 @ApiTags('membership')
 @Controller('membership')
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
-export class MermbershipController {
+export class MembershipController {
   constructor(private readonly membershipService: MembershipService) {}
 
   @Get()
-
   @ApiOperation({ summary: 'Get all memberships' })
   @ApiResponse({ status: 200, description: 'Return all memberships.' })
   findAll() {
@@ -24,7 +21,6 @@ export class MermbershipController {
   }
 
   @Get(':id')
-
   @ApiOperation({ summary: 'Get a membership by id' })
   @ApiResponse({ status: 200, description: 'Return the membership.' })
   @ApiResponse({ status: 404, description: 'Membership not found.' })
@@ -36,21 +32,20 @@ export class MermbershipController {
   @ApiOperation({ summary: 'Update a membership' })
   @ApiResponse({ status: 200, description: 'Membership updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-
   async update(
     @Param('id') id: string,
     @Body() updateMembership: UpdateMembershipDto,
   ) {
     try {
-        if (!id) {
-            throw new UnauthorizedException('Membership ID is required');
+      if (!id) {
+        throw new UnauthorizedException('Membership ID is required');
       }
-        console.log('Updating membership with ID:', id);
-        const updateData = {
-          ...updateMembership,
-          updatedAt: new Date(),
-        };
-        
+      console.log('Updating membership with ID:', id);
+      const updateData = {
+        ...updateMembership,
+        updatedAt: new Date(),
+      };
+      
       return this.membershipService.update(id, updateData);
     } catch (error) {
       console.error('Error updating membership:', error);
@@ -58,16 +53,12 @@ export class MermbershipController {
     }
   }
 
-@Get('tribe/:tribeId')
-  @ApiOperation({ summary: 'Get all memberships by tribe ' })
-  @ApiResponse({ status: 200, description: 'Return all memberships by tribe ' })
-  getAllMembershipsByTribe(
-    @Param('tribeId') tribeId: string,
-    @Param('status') status: MembershipStatus
-  ) {
-    return this.membershipService.getAllMembershipsByTribeAndStatus(tribeId, status);
+  @Get('tribe/:tribeId')
+  @ApiOperation({ summary: 'Get all memberships by tribe' })
+  @ApiResponse({ status: 200, description: 'Return all memberships by tribe' })
+  getAllMembershipsByTribe(@Param('tribeId') tribeId: string) {
+    return this.membershipService.getAllMembershipsByTribe(tribeId);
   }
-
 
   @Get('tribe/:tribeId/status/:status')
   @ApiOperation({ summary: 'Get all memberships by tribe and status' })
@@ -96,8 +87,6 @@ export class MermbershipController {
     return this.membershipService.exitFromTribe(userId, tribeId);
   }
 
-
-  //remove pending request
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a pending membership' })
   @ApiResponse({ status: 200, description: 'Membership deleted successfully' })
@@ -109,7 +98,7 @@ export class MermbershipController {
   @Get('user/:userId')
   @ApiOperation({ 
     summary: 'Get all tribes where a user is a member or founder',
-    description: 'Retrieves all tribes where the user is either a founder or an active member. Includes complete tribe information, founder details, and membership list.'
+    description: 'Retrieves all tribes where the user is an active member. Includes complete tribe information, founder details, and user role.'
   })
   @ApiResponse({ 
     status: 200, 
@@ -122,7 +111,7 @@ export class MermbershipController {
           _id: { type: 'string', description: 'Tribe ID' },
           name: { type: 'string', description: 'Tribe name' },
           description: { type: 'string', description: 'Tribe description' },
-          visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'], description: 'Tribe visibility' },
+          visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE', 'CLOSED'], description: 'Tribe visibility' },
           profilePhoto: { type: 'string', description: 'URL to tribe profile photo' },
           founder: {
             type: 'object',
@@ -134,27 +123,8 @@ export class MermbershipController {
               profilePhoto: { type: 'string', description: 'URL to founder profile photo' }
             }
           },
-          memberships: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                user: {
-                  type: 'object',
-                  properties: {
-                    _id: { type: 'string', description: 'User ID' },
-                    username: { type: 'string', description: 'Username' },
-                    name: { type: 'string', description: 'User name' },
-                    surname: { type: 'string', description: 'User surname' },
-                    profilePhoto: { type: 'string', description: 'URL to user profile photo' }
-                  }
-                },
-                role: { type: 'string', enum: ['FOUNDER', 'MODERATOR', 'MEMBER'], description: 'User role in tribe' },
-                status: { type: 'string', enum: ['ACTIVE', 'PENDING'], description: 'Membership status' },
-                joinedAt: { type: 'string', format: 'date-time', description: 'When user joined the tribe' }
-              }
-            }
-          },
+          userRole: { type: 'string', enum: ['FOUNDER', 'MODERATOR', 'MEMBER'], description: 'User role in tribe' },
+          joinedAt: { type: 'string', format: 'date-time', description: 'When user joined the tribe' },
           createdAt: { type: 'string', format: 'date-time', description: 'When tribe was created' },
           updatedAt: { type: 'string', format: 'date-time', description: 'When tribe was last updated' }
         }
@@ -179,5 +149,13 @@ export class MermbershipController {
       console.error('Error in getUserTribes controller:', error);
       throw error;
     }
+  }
+
+  @Get('tribe/:tribeId/count')
+  @ApiOperation({ summary: 'Get active members count for a tribe' })
+  @ApiResponse({ status: 200, description: 'Returns the count of active members.' })
+  async getActiveMembersCount(@Param('tribeId') tribeId: string): Promise<{ count: number }> {
+    const count = await this.membershipService.getActiveMembersCount(tribeId);
+    return { count };
   }
 }
