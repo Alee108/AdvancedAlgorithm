@@ -415,4 +415,56 @@ export class TribeController {
       });
     }
   }
+
+  @Patch(':tribeId/members/:userId/kick')
+  @ApiOperation({ summary: 'Kick a member from the tribe' })
+  @ApiResponse({ status: 200, description: 'Member kicked successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe or member not found.' })
+  async kickMember(
+    @Param('tribeId') tribeId: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ): Promise<Membership> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.kickMember(tribeId, userId, req.user.sub);
+  }
+
+  @Patch(':tribeId/members/:userId/demote')
+  @ApiOperation({ summary: 'Demote a moderator to member' })
+  @ApiResponse({ status: 200, description: 'Moderator demoted successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe or member not found.' })
+  async demoteModerator(
+    @Param('tribeId') tribeId: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ): Promise<Membership> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.demoteModerator(tribeId, userId, req.user.sub);
+  }
+
+  @Get(':tribeId/stats')
+  @ApiOperation({ summary: 'Get tribe statistics' })
+  @ApiResponse({ status: 200, description: 'Returns tribe statistics.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  async getTribeStats(
+    @Param('tribeId') tribeId: string,
+    @Req() req: any
+  ): Promise<any> {
+    if (!req.user || !req.user.sub) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.tribeService.getTribeStats(tribeId, req.user.sub);
+  }
 }

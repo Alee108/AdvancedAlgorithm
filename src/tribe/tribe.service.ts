@@ -49,34 +49,68 @@ export class TribeService {
           throw new BadRequestException('You are already a member of a tribe');
         }
       }
-      // Create the tribe
-      const tribe = new this.tribeModel({
-        ...createTribeDto,
-        founder: founder._id
-      });
 
-      // Save the tribe
-      const savedTribe = await tribe.save();
+      // Start a session for transaction
+      const session = await this.tribeModel.startSession();
+      session.startTransaction();
 
-      this.rejectPastMemberships(founder)
+      try {
+        // Create the tribe
+        const tribe = new this.tribeModel({
+          ...createTribeDto,
+          founder: founder._id,
+          memberships: [] // Initialize empty memberships array
+        });
 
-      // Create membership for the founder with FOUNDER role
-      const membership = new this.membershipModel({
-        user: new Types.ObjectId(founder._id),
-        tribe: new Types.ObjectId(savedTribe._id),
-        status: MembershipStatus.ACTIVE,
-        role: TribeRole.FOUNDER
-      });
+        // Save the tribe
+        const savedTribe = await tribe.save({ session });
 
-      await membership.save();
+        // Reject any past memberships
+        await this.rejectPastMemberships(founder);
 
-      // Populate the founder field before returning
-      const populatedTribe = await this.tribeModel.findById(savedTribe._id).populate('founder').exec();
-      if (!populatedTribe) {
-        throw new NotFoundException('Tribe not found after creation');
+        // Create membership for the founder with FOUNDER role
+        const membership = new this.membershipModel({
+          user: new Types.ObjectId(founder._id),
+          tribe: new Types.ObjectId(savedTribe._id),
+          status: MembershipStatus.ACTIVE,
+          role: TribeRole.FOUNDER
+        });
+
+        // Save the membership
+        const savedMembership = await membership.save({ session });
+
+        // Add the membership to the tribe's memberships array
+        await this.tribeModel.findByIdAndUpdate(
+          savedTribe._id,
+          { $push: { memberships: savedMembership._id } },
+          { session }
+        );
+
+        await session.commitTransaction();
+
+        // Populate the founder and memberships fields before returning
+        const populatedTribe = await this.tribeModel.findById(savedTribe._id)
+          .populate('founder')
+          .populate({
+            path: 'memberships',
+            populate: {
+              path: 'user',
+              select: 'username profilePhoto'
+            }
+          })
+          .exec();
+
+        if (!populatedTribe) {
+          throw new NotFoundException('Tribe not found after creation');
+        }
+
+        return populatedTribe;
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        session.endSession();
       }
-
-      return populatedTribe;
     } catch (error) {
       console.error('Error in create tribe service:', error);
       throw error;
@@ -692,5 +726,209 @@ export class TribeService {
       console.error('Error in close tribe service:', error);
       throw error;
     }
+  }
+
+  async kickMember(tribeId: string, userId: string, moderatorId: string): Promise<Membership> {
+    const session = await this.membershipModel.startSession();
+    session.startTransaction();
+
+    try {
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Check if the user has permission (founder or moderator)
+      const isFounder = tribe.founder._id.toString() === moderatorId;
+      const isModerator = tribe.memberships.some(membership => 
+        membership.user._id.toString() === moderatorId && 
+        membership.role === TribeRole.MODERATOR
+      );
+
+      if (!isFounder && !isModerator) {
+        throw new ForbiddenException('Only founders and moderators can kick members');
+      }
+
+      // Find the membership to kick
+      const membership = await this.membershipModel.findOne({
+        tribe: new Types.ObjectId(tribeId),
+        user: new Types.ObjectId(userId),
+        status: MembershipStatus.ACTIVE
+      }).session(session);
+
+      if (!membership) {
+        throw new NotFoundException('Active membership not found');
+      }
+
+      // Prevent kicking the founder
+      if (membership.role === TribeRole.FOUNDER) {
+        throw new ForbiddenException('Cannot kick the founder');
+      }
+
+      // Prevent moderators from kicking other moderators
+      if (isModerator && membership.role === TribeRole.MODERATOR) {
+        throw new ForbiddenException('Moderators cannot kick other moderators');
+      }
+
+      // Archive all user's posts in this tribe
+      await this.postService.archiveUserPosts(
+        new Types.ObjectId(userId),
+        new Types.ObjectId(tribeId)
+      );
+
+      // Update membership status
+      membership.status = MembershipStatus.REJECTED;
+      membership.leftAt = new Date();
+      await membership.save({ session });
+
+      // Remove from tribe's memberships array
+      await this.tribeModel.updateOne(
+        { _id: new Types.ObjectId(tribeId) },
+        { $pull: { memberships: membership._id } }
+      ).session(session);
+
+      await session.commitTransaction();
+      return membership;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async demoteModerator(tribeId: string, userId: string, founderId: string): Promise<Membership> {
+    const session = await this.membershipModel.startSession();
+    session.startTransaction();
+
+    try {
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Check if the user is the founder
+      if (tribe.founder._id.toString() !== founderId) {
+        throw new ForbiddenException('Only the founder can demote moderators');
+      }
+
+      // Find the membership to demote
+      const membership = await this.membershipModel.findOne({
+        tribe: new Types.ObjectId(tribeId),
+        user: new Types.ObjectId(userId),
+        status: MembershipStatus.ACTIVE,
+        role: TribeRole.MODERATOR
+      }).session(session);
+
+      if (!membership) {
+        throw new NotFoundException('Active moderator membership not found');
+      }
+
+      // Demote to member
+      membership.role = TribeRole.MEMBER;
+      await membership.save({ session });
+
+      await session.commitTransaction();
+      return membership;
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async getTribeStats(tribeId: string, userId: string): Promise<any> {
+    const tribe = await this.tribeModel.findById(tribeId);
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
+    }
+
+    // Check if user has permission to view stats
+    const isFounder = tribe.founder._id.toString() === userId;
+    const isMember = tribe.memberships.some(membership => 
+      membership.user._id.toString() === userId && 
+      membership.status === MembershipStatus.ACTIVE
+    );
+
+    if (!isFounder && !isMember) {
+      throw new ForbiddenException('You do not have permission to view tribe statistics');
+    }
+
+    // Get member counts by role
+    const [founderCount, moderatorCount, memberCount] = await Promise.all([
+      this.membershipModel.countDocuments({
+        tribe: new Types.ObjectId(tribeId),
+        status: MembershipStatus.ACTIVE,
+        role: TribeRole.FOUNDER
+      }),
+      this.membershipModel.countDocuments({
+        tribe: new Types.ObjectId(tribeId),
+        status: MembershipStatus.ACTIVE,
+        role: TribeRole.MODERATOR
+      }),
+      this.membershipModel.countDocuments({
+        tribe: new Types.ObjectId(tribeId),
+        status: MembershipStatus.ACTIVE,
+        role: TribeRole.MEMBER
+      })
+    ]);
+
+    // Get post count and total likes
+    const [postCount, posts] = await Promise.all([
+      this.postModel.countDocuments({
+        tribeId: new Types.ObjectId(tribeId),
+        archived: false
+      }),
+      this.postModel.find({
+        tribeId: new Types.ObjectId(tribeId),
+        archived: false
+      }).select('likes')
+    ]);
+
+    // Calculate total likes
+    const totalLikes = posts.reduce((sum, post) => sum + (post.likes?.length || 0), 0);
+
+    // Get pending requests count
+    const pendingRequestsCount = await this.membershipModel.countDocuments({
+      tribe: new Types.ObjectId(tribeId),
+      status: MembershipStatus.PENDING
+    });
+
+    // Get recent activity (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const [recentPostsCount, recentMembersCount] = await Promise.all([
+      this.postModel.countDocuments({
+        tribeId: new Types.ObjectId(tribeId),
+        archived: false,
+        createdAt: { $gte: sevenDaysAgo }
+      }),
+      this.membershipModel.countDocuments({
+        tribe: new Types.ObjectId(tribeId),
+        status: MembershipStatus.ACTIVE,
+        joinedAt: { $gte: sevenDaysAgo }
+      })
+    ]);
+
+    return {
+      totalMembers: founderCount + moderatorCount + memberCount,
+      memberBreakdown: {
+        founders: founderCount,
+        moderators: moderatorCount,
+        members: memberCount
+      },
+      totalPosts: postCount,
+      totalLikes: totalLikes,
+      pendingRequests: pendingRequestsCount,
+      recentActivity: {
+        newPosts: recentPostsCount,
+        newMembers: recentMembersCount,
+        period: '7 days'
+      },
+      tribeCreatedAt: tribe.createdAt,
+      visibility: tribe.visibility
+    };
   }
 }
