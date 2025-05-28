@@ -97,17 +97,18 @@ export class ChatGateway
     const receivedMsg = {
       id: message._id,
       message: message.message_text,
+      message_text: message.message_text,
       sent_at: message.createdAt,
       senderId: message.sender._id,
       receiverId: message.receiver._id,
       sender: {
-        id: message.sender._id,
+        _id: message.sender._id,
         username: message.sender.username,
         email: message.sender.email,
         profilePhoto: message.sender.profilePhoto
       },
       receiver: {
-        id: message.receiver._id,
+        _id: message.receiver._id,
         username: message.receiver.username,
         email: message.receiver.email,
         profilePhoto: message.receiver.profilePhoto
@@ -126,17 +127,18 @@ export class ChatGateway
     const receivedMsg = {
       id: message._id,
       message: message.message_text,
+      message_text: message.message_text,
       sent_at: message.createdAt,
       senderId: message.sender._id,
       receiverId: message.receiver._id,
       sender: {
-        id: message.sender._id,
+        _id: message.sender._id,
         username: message.sender.username,
         email: message.sender.email,
         profilePhoto: message.sender.profilePhoto
       },
       receiver: {
-        id: message.receiver._id,
+        _id: message.receiver._id,
         username: message.receiver.username,
         email: message.receiver.email,
         profilePhoto: message.receiver.profilePhoto
