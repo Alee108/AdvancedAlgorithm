@@ -38,7 +38,7 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<UserDocument> {
-    const user = await this.userModel.findById(id).exec();
+    const user = await this.userModel.findById(new Types.ObjectId(id)).exec();
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
@@ -51,7 +51,7 @@ export class UsersService {
 
   async update(id: string, updateUserData: UpdateUserData): Promise<UserDocument> {
     const updatedUser = await this.userModel
-      .findByIdAndUpdate(id, updateUserData, { new: true })
+      .findByIdAndUpdate(new Types.ObjectId(id), updateUserData, { new: true })
       .exec();
     if (!updatedUser) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -60,7 +60,7 @@ export class UsersService {
   }
 
   async delete(id: string): Promise<void> {
-    const result = await this.userModel.deleteOne({ _id: id }).exec();
+    const result = await this.userModel.deleteOne({ _id: new Types.ObjectId(id) }).exec();
     if (result.deletedCount === 0) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }

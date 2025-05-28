@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger, Inject, forwardRef, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Tribe, TribeVisibility } from '../entities/tribe/tribe.entity';
@@ -86,7 +86,7 @@ export class TribeService {
   async update(tribeId: string, updateTribeDto: UpdateTribeDto, userId: string): Promise<Tribe> {
     try {
       // Find the tribe
-      const tribe = await this.tribeModel.findById(tribeId);
+      const tribe = await this.tribeModel.findById(new Types.ObjectId(tribeId));
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
       }
@@ -98,7 +98,7 @@ export class TribeService {
 
       // Update the tribe
       const updatedTribe = await this.tribeModel.findByIdAndUpdate(
-        tribeId,
+        new Types.ObjectId(tribeId),
         { $set: updateTribeDto },
         { new: true, runValidators: true }
       ).populate('founder').exec();
@@ -122,7 +122,7 @@ export class TribeService {
       console.log(`Attempting to delete tribe ${tribeId} by user ${userId}`);
       
       // Find the tribe using lean() to get a plain JavaScript object
-      const tribe = await this.tribeModel.findById(tribeId).lean();
+      const tribe = await this.tribeModel.findById(new Types.ObjectId(tribeId)).lean();
       if (!tribe) {
         console.log(`Tribe ${tribeId} not found`);
         throw new NotFoundException('Tribe not found');
@@ -164,7 +164,7 @@ export class TribeService {
   async updateVisibility(tribeId: string, updateVisibilityDto: UpdateTribeVisibilityDto, userId: string): Promise<Tribe> {
     try {
       // Find the tribe
-      const tribe = await this.tribeModel.findById(tribeId);
+      const tribe = await this.tribeModel.findById(new Types.ObjectId(tribeId));
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
       }
@@ -182,7 +182,7 @@ export class TribeService {
 
       // Update only the visibility
       const updatedTribe = await this.tribeModel.findByIdAndUpdate(
-        tribeId,
+        new Types.ObjectId(tribeId),
         { $set: { visibility: updateVisibilityDto.visibility } },
         { new: true, runValidators: true }
       ).populate('founder').exec();
@@ -217,45 +217,32 @@ export class TribeService {
   }
 
   async findById(tribeId: string, userId: string): Promise<Tribe> {
-    try {
-      // Find the tribe and populate founder and memberships
-      const tribe = await this.tribeModel.findById(tribeId)
-        .populate('founder')
-        .populate({
-          path: 'memberships',
-          populate: {
-            path: 'user',
-            select: 'username profilePhoto' // Include only necessary user fields
-          }
-        })
-        .exec();
-
-      if (!tribe) {
-        throw new NotFoundException('Tribe not found');
-      }
-
-      // Check if the tribe is private
-      if (tribe.visibility === 'PRIVATE') {
-        // If private, check if user is a member or founder
-        const isFounder = tribe.founder._id.toString() === userId;
-        const isMember = tribe.memberships.some(membership => 
-          membership.user._id.toString() === userId && 
-          membership.status === MembershipStatus.ACTIVE
-        );
-
-        if (!isFounder && !isMember) {
-          throw new ForbiddenException('You do not have permission to view this tribe');
-        }
-      }
-
-      return tribe;
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
-        throw error;
-      }
-      console.error('Error in find tribe by id service:', error);
-      throw new BadRequestException('Invalid tribe ID');
+    const tribe = await this.tribeModel.findById(new Types.ObjectId(tribeId))
+      .populate('founder')
+      .populate({
+        path: 'memberships',
+        populate: { path: 'user', select: 'name surname username profilePhoto' }
+      })
+      .exec();
+    if (!tribe) {
+      throw new NotFoundException('Tribe not found');
     }
+
+    // Check if the tribe is private
+    if (tribe.visibility === 'PRIVATE') {
+      // If private, check if user is a member or founder
+      const isFounder = tribe.founder._id.toString() === userId;
+      const isMember = tribe.memberships.some(membership => 
+        membership.user._id.toString() === userId && 
+        membership.status === MembershipStatus.ACTIVE
+      );
+
+      if (!isFounder && !isMember) {
+        throw new ForbiddenException('You do not have permission to view this tribe');
+      }
+    }
+
+    return tribe;
   }
 
   async findByTribeId(tribeId: string): Promise<Tribe> {
@@ -402,98 +389,113 @@ export class TribeService {
   }
 
   async requestJoin(tribeId: string, userId: string): Promise<Membership> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
-
     try {
+      console.log(`Requesting to join tribe ${tribeId} for user ${userId}`);
+      
+      // Validate tribeId format
+      if (!Types.ObjectId.isValid(tribeId)) {
+        throw new BadRequestException('Invalid tribe ID format');
+      }
+
+      // Find the tribe with better error handling
       const tribe = await this.tribeModel.findById(tribeId);
+
+
+
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
       }
-
       // Check if tribe is closed
-      if (tribe.visibility === TribeVisibility.CLOSED) {
+      if (tribe?.visibility === TribeVisibility.CLOSED) {
         throw new ForbiddenException('This tribe is closed and not accepting new members');
       }
 
-      // Check if user is already a member using transaction
-      const existingMembership = await this.membershipModel.find({
-        user: new Types.ObjectId(userId),
-        status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
-      }).session(session);
+      // Check if user is already a member
+      const existingMembership = await this.membershipModel
+        .find({
+          user: new Types.ObjectId(userId),
+          status: { $in: [MembershipStatus.ACTIVE, MembershipStatus.PENDING] },
+        })
+        .populate('tribe');
+      console.log(`Existing memberships for user ${userId}:`, existingMembership);
 
       if (existingMembership.length > 0) {
         if (existingMembership.some((elem) => elem.status === MembershipStatus.ACTIVE)) {
+          console.log(`User ${userId} is already a member of a tribe`);
           throw new BadRequestException('You are already a member of a tribe');
         }
         if (existingMembership.some((req) => req.tribe._id.toString() === tribeId && req.status === MembershipStatus.PENDING)) {
+          console.log(`User ${userId} already has a pending request to join tribe ${tribeId}`);
           throw new BadRequestException('You already have a pending request to join this tribe');
         }
+      }
+      console.log(`User ${userId} is not a member of tribe ${tribeId}, proceeding with join request`);
+
+      if (tribe?.visibility === TribeVisibility.PUBLIC) {
+        console.log(`Tribe ${tribeId} is public, setting membership status to ACTIVE`);
+        // reject all past memberships for this user
+        await this.membershipService.rejectAllActiveMemberships(tribeId,userId);
       }
 
       const membership = new this.membershipModel({
         user: new Types.ObjectId(userId),
         tribe: new Types.ObjectId(tribeId),
-        status: tribe.visibility === 'PRIVATE' ? MembershipStatus.PENDING : MembershipStatus.ACTIVE,
+        status: tribe?.visibility === 'PRIVATE' ? MembershipStatus.PENDING : MembershipStatus.ACTIVE,
         role: TribeRole.MEMBER
       });
 
-      const savedMembership = await membership.save({ session });
+      const savedMembership = await membership.save();
+      console.log(`Created new membership:`, { id: savedMembership._id, status: savedMembership.status });
 
-      if (tribe.visibility === 'PUBLIC') {
-        tribe.memberships.push(savedMembership);
-        await tribe.save({ session });
+      console.log(`Saving membership to tribe ${tribeId} visibility ${tribe?.visibility}`);
+      if (tribe?.visibility === 'PUBLIC') {
+        tribe?.memberships.push(savedMembership);
+        await tribe?.save();
+        console.log(`Updated tribe memberships for public tribe`);
       }
 
-      await session.commitTransaction();
       return savedMembership;
     } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
+      console.error('Error in requestJoin:', error);
+      if (error instanceof NotFoundException || 
+          error instanceof BadRequestException || 
+          error instanceof ForbiddenException) {
+        throw error;
+      }
+      console.error('Error in requestJoin:', error);
+      console.error(error.stack);
+      throw new InternalServerErrorException('Error processing join request');
     }
   }
 
   async leaveTribe(tribeId: string, userId: string): Promise<void> {
-    const session = await this.membershipModel.startSession();
-    session.startTransaction();
+    // Rimosso uso di sessioni/transaction
+    const membership = await this.membershipModel.findOne({
+      tribe: new Types.ObjectId(tribeId),
+      user: new Types.ObjectId(userId),
+      status: MembershipStatus.ACTIVE
+    });
 
-    try {
-      const membership = await this.membershipModel.findOne({
-        tribe: new Types.ObjectId(tribeId),
-        user: new Types.ObjectId(userId),
-        status: MembershipStatus.ACTIVE
-      }).session(session);
-
-      if (!membership) {
-        throw new NotFoundException('Active membership not found');
-      }
-
-      // Archive all user's posts in this tribe
-      await this.postService.archiveUserPosts(
-        new Types.ObjectId(userId),
-        new Types.ObjectId(tribeId)
-      );
-
-      // Update membership status
-      membership.status = MembershipStatus.INACTIVE;
-      membership.leftAt = new Date();
-      await membership.save({ session });
-
-      // Remove from tribe's memberships array
-      await this.tribeModel.updateOne(
-        { _id: new Types.ObjectId(tribeId) },
-        { $pull: { memberships: membership._id } }
-      ).session(session);
-
-      await session.commitTransaction();
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
+    if (!membership) {
+      throw new NotFoundException('Active membership not found');
     }
+
+    // Archive all user's posts in this tribe
+    await this.postService.archiveUserPosts(
+      new Types.ObjectId(userId),
+      new Types.ObjectId(tribeId)
+    );
+
+    // Update membership status
+    membership.status = MembershipStatus.INACTIVE;
+    membership.leftAt = new Date();
+    await membership.save();
+
+    // Remove from tribe's memberships array
+    await this.tribeModel.updateOne(
+      { _id: new Types.ObjectId(tribeId) },
+      { $pull: { memberships: membership._id } }
+    );
   }
 
   async getAllPostsByTribe(tribeId: string, userId: string): Promise<Post[]> {
@@ -688,6 +690,48 @@ export class TribeService {
       await tribe.save();
 
       return "Tribe closed successfully";
+    } catch (error) {
+      console.error('Error in close tribe service:', error);
+      throw error;
+    }
+  }
+
+  async close(tribeId: string, userId: string): Promise<void> {
+    try {
+      // Find the tribe
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Check if user is the founder
+      if (tribe.founder.toString() !== userId) {
+        throw new ForbiddenException('Only the founder can close the tribe');
+      }
+
+      // Update tribe visibility to CLOSED
+      tribe.visibility = TribeVisibility.CLOSED;
+      await tribe.save();
+
+      // Archive all posts in the tribe
+      await this.postModel.updateMany(
+        { tribeId: new Types.ObjectId(tribeId) },
+        { $set: { archived: true } }
+      );
+
+      // Update all active memberships to inactive
+      await this.membershipModel.updateMany(
+        { 
+          tribe: new Types.ObjectId(tribeId),
+          status: MembershipStatus.ACTIVE
+        },
+        { 
+          $set: { 
+            status: MembershipStatus.INACTIVE,
+            leftAt: new Date()
+          }
+        }
+      );
     } catch (error) {
       console.error('Error in close tribe service:', error);
       throw error;
