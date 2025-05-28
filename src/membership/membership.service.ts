@@ -7,6 +7,7 @@ import { identity } from 'rxjs';
 import { TribeService } from 'src/tribe/tribe.service';
 import e from 'express';
 import { Post, PostDocument } from 'src/entities/post/post.entity';
+import { TribeVisibility } from 'src/entities/tribe/tribe.entity';
 
 @Injectable()
 export class MembershipService {
@@ -72,12 +73,27 @@ export class MembershipService {
         return memberships;
     }
     async exitFromTribe(userId: string, tribeId: string): Promise<MembershipDocument> { 
-     const membership = await this.membershipModel
+      const membership = await this.membershipModel
           .findOne({ user: userId, tribe: tribeId, status: MembershipStatus.ACTIVE })
           .exec();
         if (!membership) {
           throw new NotFoundException(`Active membership not found for user ${userId} in tribe ${tribeId}`);
         }
+
+        // Get the tribe to check if it's closed
+        const tribe = await this.tribeService.findByTribeId(tribeId);
+        if (!tribe) {
+          throw new NotFoundException(`Tribe with ID ${tribeId} not found`);
+        }
+
+        // If the tribe is closed, we don't need to do anything else
+        if (tribe.visibility === TribeVisibility.CLOSED) {
+          membership.status = MembershipStatus.INACTIVE;
+          membership.leftAt = new Date();
+          return membership.save();
+        }
+
+        // For active tribes, archive posts and update membership
         membership.status = MembershipStatus.INACTIVE;
         membership.leftAt = new Date();
         const updatedMembership = await membership.save();

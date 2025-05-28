@@ -411,6 +411,11 @@ export class TribeService {
         throw new NotFoundException('Tribe not found');
       }
 
+      // Check if tribe is closed
+      if (tribe.visibility === TribeVisibility.CLOSED) {
+        throw new ForbiddenException('This tribe is closed and not accepting new members');
+      }
+
       // Check if user is already a member using transaction
       const existingMembership = await this.membershipModel.find({
         user: new Types.ObjectId(userId),
@@ -677,6 +682,10 @@ export class TribeService {
           $set: { archived: true }
         }
       );
+
+      // Set tribe visibility to CLOSED
+      tribe.visibility = TribeVisibility.CLOSED;
+      await tribe.save();
 
       return "Tribe closed successfully";
     } catch (error) {

@@ -7,7 +7,8 @@ import { Membership } from '../membership/membership.entity';
 
 export enum TribeVisibility {
   PUBLIC = 'PUBLIC',
-  PRIVATE = 'PRIVATE'
+  PRIVATE = 'PRIVATE',
+  CLOSED = 'CLOSED'
 }
 
 export type TribeDocument = Tribe & Document;
