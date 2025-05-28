@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Membership, MembershipDocument, MembershipStatus } from 'src/entities/membership/membership.entity';
@@ -13,6 +13,7 @@ export class MembershipService {
     
       constructor(
         @InjectModel(Membership.name) private membershipModel: Model<MembershipDocument>,
+        @Inject(forwardRef(() => TribeService))
         private readonly tribeService: TribeService,
         @InjectModel(Post.name) private postModel: Model<PostDocument>,
       ) {}

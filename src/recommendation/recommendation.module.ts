@@ -6,6 +6,7 @@ import { Post, PostSchema } from '../entities/post/post.entity';
 import { User, UserSchema } from '../entities/users/users.entity';
 import { PostView, PostViewSchema } from '../entities/post-view/post-view.entity';
 import { Neo4jModule } from '../neo4j/neo4j.module';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
@@ -14,10 +15,11 @@ import { Neo4jModule } from '../neo4j/neo4j.module';
       { name: User.name, schema: UserSchema },
       { name: PostView.name, schema: PostViewSchema }
     ]),
-    Neo4jModule
+    Neo4jModule,
+    CacheModule.register()
   ],
   controllers: [RecommendationController],
   providers: [RecommendationService],
   exports: [RecommendationService]
 })
-export class RecommendationModule {} 
+export class RecommendationModule {}

@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Cache } from 'cache-manager';
 import { Post, PostDocument } from '../entities/post/post.entity';
 import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
@@ -9,88 +11,178 @@ import { PostView, PostViewDocument } from '../entities/post-view/post-view.enti
 interface PostScore {
   post: PostDocument;
   score: number;
+  reasons: string[]; // For debugging/explanation
+}
+
+interface PostMetadata {
+  keywords?: string[];
+  readingTime?: number;
+  category?: string;
+}
+
+interface TribeData {
+  name: string;
+  category?: string;
+  memberCount?: number;
+}
+
+interface UserProfile {
+  interests: Map<string, number>;
+  following: Types.ObjectId[];
+  viewedPosts: Set<string>;
+  recentInteractions: Map<string, number>; // postId -> interaction_score
+}
+
+interface RecommendationMetrics {
+  totalPosts: number;
+  scoredPosts: number;
+  fallbackUsed: boolean;
+  processingTime: number;
 }
 
 @Injectable()
 export class RecommendationService {
   private readonly logger = new Logger(RecommendationService.name);
+  private readonly CACHE_TTL = 300; // 5 minutes
+  private readonly MAX_POSTS_TO_SCORE = 200;
+  private readonly DIVERSITY_THRESHOLD = 0.3;
 
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(PostView.name) private postViewModel: Model<PostViewDocument>,
-    private neo4jService: Neo4jService
+    private neo4jService: Neo4jService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
   ) {}
 
   async getRecommendedPosts(userId: string, limit: number = 20): Promise<PostDocument[]> {
+    const startTime = Date.now();
+    const cacheKey = `recommendations:${userId}:${limit}`;
+    
     try {
-      // Get user's interests from Neo4j
-      const userInterests = await this.getUserInterests(userId);
-      
-      // Get user's following list
-      const following = await this.getFollowingUserIds(userId);
-      
-      // Get user's viewed/interacted posts
-      const viewedPosts = await this.getUserViewedPosts(userId);
-
-      // Get posts to score
-      const posts = await this.getPostsToScore(userId, following, viewedPosts);
-      this.logger.debug(`Found ${posts.length} posts to score for user ${userId}`);
-      // If no posts found, try fallback strategies
-      if (posts.length === 0) {
-        return this.getFallbackPosts(limit);
+      // Check cache first
+      const cached = await this.cacheManager.get<PostDocument[]>(cacheKey);
+      if (cached) {
+        this.logger.debug(`Returning cached recommendations for user ${userId}`);
+        return cached;
       }
 
-      // Score and sort posts
-      const scoredPosts = await this.scorePosts(posts, userInterests, following);
-      this.logger.debug(`Scored ${scoredPosts.length} posts for user ${userId}`);
-      // If we don't have enough scored posts, supplement with fallback posts
-      if (scoredPosts.length < limit) {
-        const fallbackPosts = await this.getFallbackPosts(limit - scoredPosts.length);
-        const scoredFallbackPosts = fallbackPosts.map(post => ({ post, score: 0 }));
-        scoredPosts.push(...scoredFallbackPosts);
+      // Build user profile
+      const userProfile = await this.buildUserProfile(userId);
+      
+      // Get candidate posts with intelligent filtering
+      const candidatePosts = await this.getCandidatePosts(userId, userProfile);
+      
+      if (candidatePosts.length === 0) {
+        this.logger.debug(`No candidate posts found for user ${userId}, using fallback`);
+        const fallbackPosts = await this.getFallbackPosts(limit, userId);
+        await this.cacheManager.set(cacheKey, fallbackPosts, this.CACHE_TTL);
+        return fallbackPosts;
       }
 
-      // Return top N posts
-      return scoredPosts
-        .sort((a, b) => b.score - a.score)
+      // Score posts with multiple algorithms
+      const scoredPosts = await this.scorePostsAdvanced(candidatePosts, userProfile);
+      
+      // Apply diversity and freshness filters
+      const diversifiedPosts = this.applyDiversityFilters(scoredPosts, limit);
+      
+      // Extract final results
+      const recommendations = diversifiedPosts
         .slice(0, limit)
         .map(item => item.post);
+
+      // Cache results
+      await this.cacheManager.set(cacheKey, recommendations, this.CACHE_TTL);
+      
+      // Log metrics
+      const metrics: RecommendationMetrics = {
+        totalPosts: candidatePosts.length,
+        scoredPosts: scoredPosts.length,
+        fallbackUsed: false,
+        processingTime: Date.now() - startTime
+      };
+      
+      this.logger.debug(`Recommendations generated for user ${userId}:`, metrics);
+      
+      return recommendations;
+      
     } catch (error) {
-      this.logger.error(`Error getting recommendations for user ${userId}:`, error);
-      // Fallback to popular posts if recommendation fails
-      return this.getFallbackPosts(limit);
+      this.logger.error(`Error generating recommendations for user ${userId}:`, error);
+      const fallbackPosts = await this.getFallbackPosts(limit, userId);
+      await this.cacheManager.set(cacheKey, fallbackPosts, this.CACHE_TTL / 2); // Shorter cache for fallback
+      return fallbackPosts;
     }
   }
 
+  private async buildUserProfile(userId: string): Promise<UserProfile> {
+    const [interests, following, viewedPosts, recentInteractions] = await Promise.all([
+      this.getUserInterests(userId),
+      this.getFollowingUsers(userId),
+      this.getUserViewedPosts(userId),
+      this.getRecentInteractions(userId)
+    ]);
+
+    return {
+      interests,
+      following,
+      viewedPosts,
+      recentInteractions
+    };
+  }
+
   private async getUserInterests(userId: string): Promise<Map<string, number>> {
+    const cacheKey = `user_interests:${userId}`;
+    const cached = await this.cacheManager.get<Map<string, number>>(cacheKey);
+    if (cached) return cached;
+
     const session = this.neo4jService.getSession();
     try {
       const result = await session.run(
         `
         MATCH (u:User {id: $userId})-[r:INTERESTED_IN]->(t:Tag)
-        RETURN t.name as tag, r.weight as weight
+        RETURN t.name as tag, r.weight as weight, r.lastUpdated as lastUpdated
+        ORDER BY r.weight DESC
         `,
         { userId }
       );
 
       const interests = new Map<string, number>();
+      const decayFactor = 0.95; // Decay older interests
+      const currentTime = Date.now();
+
       result.records.forEach(record => {
-        interests.set(record.get('tag'), record.get('weight'));
+        const weight = record.get('weight');
+        const lastUpdated = record.get('lastUpdated') || currentTime;
+        const daysSinceUpdate = (currentTime - lastUpdated) / (1000 * 60 * 60 * 24);
+        const decayedWeight = weight * Math.pow(decayFactor, daysSinceUpdate);
+        interests.set(record.get('tag'), decayedWeight);
       });
+
+      await this.cacheManager.set(cacheKey, interests, this.CACHE_TTL * 2);
       return interests;
     } catch (error) {
       this.logger.warn(`Error getting user interests for ${userId}:`, error);
-      return new Map(); // Return empty map if there's an error
+      return new Map();
     } finally {
       await session.close();
     }
   }
 
-  private async getFollowingUserIds(userId: string): Promise<Types.ObjectId[]> {
+  private async getFollowingUsers(userId: string): Promise<Types.ObjectId[]> {
+    const cacheKey = `user_following:${userId}`;
+    const cached = await this.cacheManager.get<Types.ObjectId[]>(cacheKey);
+    if (cached) return cached;
+
     try {
-      const user = await this.userModel.findById(userId).select('following').exec();
-      return user?.following || [];
+      const user = await this.userModel
+        .findById(userId)
+        .select('following')
+        .lean()
+        .exec();
+      
+      const following = user?.following || [];
+      await this.cacheManager.set(cacheKey, following, this.CACHE_TTL * 4);
+      return following;
     } catch (error) {
       this.logger.warn(`Error getting following list for ${userId}:`, error);
       return [];
@@ -100,116 +192,334 @@ export class RecommendationService {
   private async getUserViewedPosts(userId: string): Promise<Set<string>> {
     try {
       const userObjectId = new Types.ObjectId(userId);
-      const viewedPosts = await this.postViewModel
-        .find({ userId: userObjectId })
+      const recentViews = await this.postViewModel
+        .find({ 
+          userId: userObjectId,
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
+        })
         .select('postId')
+        .lean()
         .exec();
       
-      return new Set(viewedPosts.map(view => view.postId.toString()));
+      return new Set(recentViews.map(view => view.postId.toString()));
     } catch (error) {
       this.logger.warn(`Error getting viewed posts for ${userId}:`, error);
       return new Set();
     }
   }
 
-  private async getPostsToScore(
-    userId: string,
-    following: Types.ObjectId[],
-    viewedPosts: Set<string>
-  ): Promise<PostDocument[]> {
+  private async getRecentInteractions(userId: string): Promise<Map<string, number>> {
+    // This would include likes, comments, shares, etc.
+    // Implementation depends on your interaction tracking system
+    const session = this.neo4jService.getSession();
     try {
-      // Get posts from followed users and posts with matching tags
+      const result = await session.run(
+        `
+        MATCH (u:User {id: $userId})-[r:INTERACTED_WITH]->(p:Post)
+        WHERE r.timestamp > datetime() - duration('P7D')
+        RETURN p.id as postId, r.type as interactionType, r.weight as weight
+        `,
+        { userId }
+      );
+
+      const interactions = new Map<string, number>();
+      result.records.forEach(record => {
+        const postId = record.get('postId');
+        const weight = record.get('weight') || 1;
+        interactions.set(postId, (interactions.get(postId) || 0) + weight);
+      });
+
+      return interactions;
+    } catch (error) {
+      this.logger.warn(`Error getting recent interactions for ${userId}:`, error);
+      return new Map();
+    } finally {
+      await session.close();
+    }
+  }
+
+  private async getCandidatePosts(userId: string, userProfile: UserProfile): Promise<PostDocument[]> {
+    const userObjectId = new Types.ObjectId(userId);
+    const viewedPostIds = Array.from(userProfile.viewedPosts).map(id => new Types.ObjectId(id));
+    
+    // Build more sophisticated query
+    const matchConditions = [
+      { archived: false },
+      { userId: { $ne: userObjectId } }, // Don't recommend user's own posts
+      { _id: { $nin: viewedPostIds } },
+      {
+        $or: [
+          // Posts from followed users
+          { userId: { $in: userProfile.following } },
+          // Posts with user's interest tags
+          { 'metadata.keywords': { $in: Array.from(userProfile.interests.keys()) } },
+          // Popular recent posts
+          { 
+            createdAt: { $gte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
+            $expr: { $gte: [{ $size: { $ifNull: ['$likes', []] } }, 5] }
+          }
+        ]
+      }
+    ];
+
+    try {
       const posts = await this.postModel
-        .find({
-          archived: false,
-          _id: { $nin: Array.from(viewedPosts).map(id => new Types.ObjectId(id)) },
-          $or: [
-            { userId: { $in: following } },
-            { 'metadata.keywords': { $exists: true, $ne: [] } }
-          ]
+        .find({ $and: matchConditions })
+        .populate('userId', 'name surname username profilePhoto verified')
+        .populate('tribeId', 'name category memberCount')
+        .populate({
+          path: 'comments',
+          options: { limit: 3, sort: { createdAt: -1 } }
         })
-        .populate('userId', 'name surname username profilePhoto')
-        .populate('tribeId', 'name')
-        .populate('comments')
         .sort({ createdAt: -1 })
-        .limit(100) // Limit to recent posts for performance
+        .limit(this.MAX_POSTS_TO_SCORE)
+        .lean()
         .exec();
 
       return posts;
     } catch (error) {
-      this.logger.warn(`Error getting posts to score for ${userId}:`, error);
+      this.logger.error(`Error getting candidate posts for ${userId}:`, error);
       return [];
     }
   }
 
-  private async scorePosts(
-    posts: PostDocument[],
-    userInterests: Map<string, number>,
-    following: Types.ObjectId[]
-  ): Promise<PostScore[]> {
+  private async scorePostsAdvanced(posts: PostDocument[], userProfile: UserProfile): Promise<PostScore[]> {
     return posts.map(post => {
       let score = 0;
+      const reasons: string[] = [];
 
-      // Base score from post age (newer posts get higher score)
+      // 1. Temporal decay (newer posts preferred)
       const ageInHours = (Date.now() - post.createdAt.getTime()) / (1000 * 60 * 60);
-      score += Math.max(0, 24 - ageInHours) * 0.5;
+      const timeScore = Math.max(0, Math.exp(-ageInHours / 24) * 10);
+      score += timeScore;
+      if (timeScore > 5) reasons.push('recent');
 
-      // Score from user interests
-      if (post.metadata?.keywords) {
-        post.metadata.keywords.forEach(tag => {
-          const interestWeight = userInterests.get(tag) || 0;
-          score += interestWeight * 2;
+      // 2. Interest matching with TF-IDF-like scoring
+      const postMetadata = post.metadata as PostMetadata;
+      if (postMetadata?.keywords?.length) {
+        const totalInterests = Array.from(userProfile.interests.values()).reduce((sum, weight) => sum + weight, 0);
+        let interestScore = 0;
+        
+        postMetadata.keywords.forEach(tag => {
+          const userInterest = userProfile.interests.get(tag) || 0;
+          if (userInterest > 0) {
+            // Normalize by total interests (TF-IDF style)
+            const normalizedScore = (userInterest / totalInterests) * 15;
+            interestScore += normalizedScore;
+          }
         });
+        
+        score += interestScore;
+        if (interestScore > 5) reasons.push('interests');
       }
 
-      // Bonus for posts from followed users
-      if (following.some(id => id.equals(post.userId))) {
-        score += 3;
+      // 3. Social signals (following)
+      const isFromFollowed = userProfile.following.some(id => id.equals(post.userId));
+      if (isFromFollowed) {
+        score += 8;
+        reasons.push('following');
       }
 
-      // Engagement score
+      // 4. Engagement quality score
       const likeCount = post.likes?.length || 0;
       const commentCount = post.comments?.length || 0;
-      score += (likeCount * 0.5) + (commentCount * 1);
+      const engagementScore = Math.log(1 + likeCount) * 2 + Math.log(1 + commentCount) * 3;
+      score += engagementScore;
+      if (engagementScore > 3) reasons.push('popular');
 
-      return { post, score };
+      // 5. Content quality indicators
+      if (post.description && post.base64Image && post.description.length > 100) {
+        score += 2; // Bonus for longer content
+        reasons.push('quality');
+      }
+
+      // 6. Tribe/community relevance
+      if (post.tribeId) {
+        score += 1; // Active tribes
+      }
+
+      // 7. Diversity penalty for similar content
+      // This would require content similarity analysis
+
+      // 8. User behavior patterns (collaborative filtering)
+      const interactionBonus = userProfile.recentInteractions.get(post._id.toString()) || 0;
+      score += interactionBonus * 2;
+
+      return { post, score, reasons };
     });
   }
 
-  private async getFallbackPosts(limit: number): Promise<PostDocument[]> {
+  private applyDiversityFilters(scoredPosts: PostScore[], limit: number): PostScore[] {
+    const sorted = scoredPosts.sort((a, b) => b.score - a.score);
+    const diversified: PostScore[] = [];
+    const seenAuthors = new Set<string>();
+    const seenTribes = new Set<string>();
+    const seenTags = new Set<string>();
+
+    for (const scoredPost of sorted) {
+      if (diversified.length >= limit) break;
+
+      const authorId = scoredPost.post.userId._id?.toString();
+      const tribeId = scoredPost.post.tribeId?._id?.toString();
+      const postMetadata = scoredPost.post.metadata as PostMetadata;
+      const tags = postMetadata?.keywords || [];
+
+      // Diversity checks
+      const authorOverlap = authorId && seenAuthors.has(authorId);
+      const tribeOverlap = tribeId && seenTribes.has(tribeId);
+      const tagOverlap = tags.some(tag => seenTags.has(tag));
+
+      // Apply diversity penalty
+      if (authorOverlap && seenAuthors.size > 2) {
+        scoredPost.score *= 0.7;
+      }
+      if (tribeOverlap && seenTribes.size > 3) {
+        scoredPost.score *= 0.8;
+      }
+
+      diversified.push(scoredPost);
+
+      // Track diversity
+      if (authorId) seenAuthors.add(authorId);
+      if (tribeId) seenTribes.add(tribeId);
+      tags.forEach(tag => seenTags.add(tag));
+    }
+
+    return diversified.sort((a, b) => b.score - a.score);
+  }
+
+  private async getFallbackPosts(limit: number, userId?: string): Promise<PostDocument[]> {
+    const cacheKey = `fallback_posts:${limit}`;
+    const cached = await this.cacheManager.get<PostDocument[]>(cacheKey);
+    if (cached) return cached;
+
     try {
-      // Try to get popular posts from active tribes first
-      const popularPosts = await this.postModel
-        .find({ archived: false })
-        .populate('userId', 'name surname username profilePhoto')
-        .populate('tribeId', 'name')
-        .populate('comments')
-        .sort({ 
-          createdAt: -1 
-        })
-        .limit(limit)
-        .exec();
+      // Multi-level fallback strategy
+      let posts = await this.getFallbackLevel1(limit, userId); // Popular recent posts
+      
+      if (posts.length < limit) {
+        this.logger.debug('Level 1 fallback insufficient, trying level 2');
+        const level2Posts = await this.getFallbackLevel2(limit - posts.length, userId);
+        posts = [...posts, ...level2Posts];
+      }
+      
+      if (posts.length < limit) {
+        this.logger.debug('Level 2 fallback insufficient, trying level 3');
+        const level3Posts = await this.getFallbackLevel3(limit - posts.length, userId);
+        posts = [...posts, ...level3Posts];
+      }
 
-      // Sort the results in memory by engagement metrics
-      popularPosts.sort((a, b) => {
-        const aScore = (a.likes?.length || 0) + (a.comments?.length || 0);
-        const bScore = (b.likes?.length || 0) + (b.comments?.length || 0);
-        return bScore - aScore;
-      });
-
-      return popularPosts;
+      // Apply basic diversity
+      const diversified = this.basicDiversityFilter(posts, limit);
+      
+      await this.cacheManager.set(cacheKey, diversified, this.CACHE_TTL);
+      return diversified;
     } catch (error) {
       this.logger.error('Error getting fallback posts:', error);
-      // Last resort: get any recent posts
-      return this.postModel
-        .find({ archived: false })
-        .populate('userId', 'name surname username profilePhoto')
-        .populate('tribeId', 'name')
+      return [];
+    }
+  }
+
+  // Level 1: Popular posts from last 7 days
+  private async getFallbackLevel1(limit: number, userId?: string): Promise<PostDocument[]> {
+    try {
+      const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
+      
+      const posts = await this.postModel
+        .find({ 
+          archived: false,
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+          ...excludeUser
+        })
+        .populate('userId', 'name surname username profilePhoto verified')
+        .populate('tribeId', 'name category')
         .populate('comments')
         .sort({ createdAt: -1 })
-        .limit(limit)
+        .limit(limit * 3) // Get more to sort by engagement
+        .lean()
         .exec();
+
+      // Sort by engagement score in JavaScript
+      return posts
+        .sort((a, b) => {
+          const aEngagement = (a.likes?.length || 0) + (a.comments?.length || 0) * 2;
+          const bEngagement = (b.likes?.length || 0) + (b.comments?.length || 0) * 2;
+          return bEngagement - aEngagement;
+        })
+        .slice(0, limit * 2);
+        
+    } catch (error) {
+      this.logger.warn('Level 1 fallback failed:', error);
+      return [];
     }
+  }
+
+  // Level 2: Recent posts from last 30 days (less popular but recent)
+  private async getFallbackLevel2(limit: number, userId?: string): Promise<PostDocument[]> {
+    try {
+      const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
+      
+      return await this.postModel
+        .find({ 
+          archived: false,
+          createdAt: { 
+            $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+            $lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+          },
+          ...excludeUser
+        })
+        .populate('userId', 'name surname username profilePhoto verified')
+        .populate('tribeId', 'name category')
+        .populate('comments')
+        .sort({ createdAt: -1 })
+        .limit(limit * 2)
+        .lean()
+        .exec();
+    } catch (error) {
+      this.logger.warn('Level 2 fallback failed:', error);
+      return [];
+    }
+  }
+
+  // Level 3: Latest posts regardless of age (absolute fallback)
+  private async getFallbackLevel3(limit: number, userId?: string): Promise<PostDocument[]> {
+    try {
+      const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
+      
+      return await this.postModel
+        .find({ 
+          archived: false,
+          ...excludeUser
+        })
+        .populate('userId', 'name surname username profilePhoto verified')
+        .populate('tribeId', 'name category')
+        .populate('comments')
+        .sort({ createdAt: -1 }) // Simply latest posts
+        .limit(limit)
+        .lean()
+        .exec();
+    } catch (error) {
+      this.logger.error('Level 3 fallback failed:', error);
+      // If everything fails, return empty array
+      return [];
+    }
+  }
+
+  private basicDiversityFilter(posts: PostDocument[], limit: number): PostDocument[] {
+    const result: PostDocument[] = [];
+    const seenAuthors = new Set<string>();
+
+    for (const post of posts) {
+      if (result.length >= limit) break;
+      
+      const authorId = post.userId._id?.toString();
+      if (!authorId || !seenAuthors.has(authorId) || seenAuthors.size < 3) {
+        result.push(post);
+        if (authorId) seenAuthors.add(authorId);
+      }
+    }
+
+    return result;
   }
 
   async recordPostView(userId: string, postId: string): Promise<void> {
@@ -217,14 +527,96 @@ export class RecommendationService {
       const userObjectId = new Types.ObjectId(userId);
       const postObjectId = new Types.ObjectId(postId);
 
-      // Create or update the view record
-      await this.postViewModel.findOneAndUpdate(
-        { userId: userObjectId, postId: postObjectId },
-        { userId: userObjectId, postId: postObjectId },
-        { upsert: true, new: true }
-      ).exec();
+      // Record view and update user interests asynchronously
+      await Promise.all([
+        this.postViewModel.findOneAndUpdate(
+          { userId: userObjectId, postId: postObjectId },
+          { 
+            userId: userObjectId, 
+            postId: postObjectId,
+            viewedAt: new Date()
+          },
+          { upsert: true, new: true }
+        ).exec(),
+        this.updateUserInterestsFromView(userId, postId)
+      ]);
+
+      // Invalidate relevant caches
+      await Promise.all([
+        this.cacheManager.del(`recommendations:${userId}:20`),
+        this.cacheManager.del(`recommendations:${userId}:10`)
+      ]);
+
     } catch (error) {
       this.logger.error(`Error recording post view for user ${userId}, post ${postId}:`, error);
     }
   }
-} 
+
+  private async updateUserInterestsFromView(userId: string, postId: string): Promise<void> {
+    try {
+      const post = await this.postModel
+        .findById(postId)
+        .select('metadata.keywords')
+        .lean()
+        .exec();
+
+      if (post?.metadata?.keywords?.length) {
+        const session = this.neo4jService.getSession();
+        try {
+          await session.run(
+            `
+            MATCH (u:User {id: $userId})
+            UNWIND $tags AS tag
+            MERGE (t:Tag {name: tag})
+            MERGE (u)-[r:INTERESTED_IN]->(t)
+            SET r.weight = COALESCE(r.weight, 0) + 0.1,
+                r.lastUpdated = datetime()
+            `,
+            { userId, tags: post.metadata.keywords }
+          );
+        } finally {
+          await session.close();
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Error updating user interests from view:`, error);
+    }
+  }
+
+  // Additional method for A/B testing different algorithms
+  async getRecommendationsWithAlgorithm(
+    userId: string, 
+    algorithm: 'collaborative' | 'content' | 'hybrid' | 'trending',
+    limit: number = 20
+  ): Promise<PostDocument[]> {
+    // Implementation for different recommendation algorithms
+    // This allows for A/B testing and algorithm comparison
+    switch (algorithm) {
+      case 'collaborative':
+        return this.getCollaborativeRecommendations(userId, limit);
+      case 'content':
+        return this.getContentBasedRecommendations(userId, limit);
+      case 'trending':
+        return this.getTrendingRecommendations(limit);
+      default:
+        return this.getRecommendedPosts(userId, limit);
+    }
+  }
+
+  private async getCollaborativeRecommendations(userId: string, limit: number): Promise<PostDocument[]> {
+    // Find users with similar interests and recommend their liked posts
+    // Implementation would use Neo4j to find similar users
+    return this.getFallbackPosts(limit);
+  }
+
+  private async getContentBasedRecommendations(userId: string, limit: number): Promise<PostDocument[]> {
+    // Pure content-based filtering using only user interests and post tags
+    // Implementation focuses only on content similarity
+    return this.getFallbackPosts(limit);
+  }
+
+  private async getTrendingRecommendations(limit: number): Promise<PostDocument[]> {
+    // Get currently trending posts regardless of user preferences
+    return this.getFallbackPosts(limit);
+  }
+}

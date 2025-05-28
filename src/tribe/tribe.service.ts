@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Tribe, TribeVisibility } from '../entities/tribe/tribe.entity';
@@ -9,6 +9,7 @@ import { UpdateTribeVisibilityDto } from './dto/update-tribe-visibility.dto';
 import { Membership, MembershipStatus, TribeRole } from '../entities/membership/membership.entity';
 import { Post } from '../entities/post/post.entity';
 import { PostService } from '../post/post.service';
+import { MembershipService } from '../membership/membership.service';
 
 @Injectable()
 export class TribeService {
@@ -23,7 +24,9 @@ export class TribeService {
     private membershipModel: Model<Membership>,
     @InjectModel(Post.name)
     private postModel: Model<Post>,
-    private postService: PostService
+    private postService: PostService,
+    @Inject(forwardRef(() => MembershipService))
+    private membershipService: MembershipService
   ) {}
 
   async create(createTribeDto: CreateTribeDto, founderId: string): Promise<Tribe> {
@@ -636,6 +639,48 @@ export class TribeService {
         .exec();
     } catch (error) {
       console.error('Error in findByFounderId:', error);
+      throw error;
+    }
+  }
+
+  async closeTribe(tribeId: string, userId: string): Promise<string> {
+    try {
+      // Find the tribe
+      const tribe = await this.tribeModel.findById(tribeId);
+      if (!tribe) {
+        throw new NotFoundException('Tribe not found');
+      }
+
+      // Check if user is the founder
+      if (tribe.founder.toString() !== userId) {
+        throw new ForbiddenException('Only the founder can close the tribe');
+      }
+
+      // Get all active memberships
+      const memberships = await this.membershipModel.find({
+        tribe: new Types.ObjectId(tribeId),
+        status: MembershipStatus.ACTIVE
+      });
+
+      // Set all memberships to inactive
+      for (const membership of memberships) {
+        await this.membershipService.exitFromTribe(membership.user.toString(), tribeId);
+      }
+
+      // Archive all posts in the tribe
+      await this.postModel.updateMany(
+        {
+          tribeId: new Types.ObjectId(tribeId),
+          archived: false
+        },
+        {
+          $set: { archived: true }
+        }
+      );
+
+      return "Tribe closed successfully";
+    } catch (error) {
+      console.error('Error in close tribe service:', error);
       throw error;
     }
   }

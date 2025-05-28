@@ -347,4 +347,50 @@ export class TribeController {
     }
     return this.tribeService.getAllPostsByTribe(tribeId, req.user.sub);
   }
+
+  @Post(':id/close')
+  @ApiOperation({ summary: 'Close a tribe' })
+  @ApiResponse({ status: 200, description: 'Tribe successfully closed.' })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Only the founder can close the tribe.' })
+  @ApiResponse({ status: 404, description: 'Tribe not found.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  async close(
+    @Param('id') id: string,
+    @Req() req: any
+  ): Promise<string> {
+    try {
+      if (!req.user || !req.user.sub) {
+        throw new BadRequestException('User not authenticated');
+      }
+
+      console.log('Close tribe request received:', {
+        tribeId: id,
+        userId: req.user.sub,
+        userEmail: req.user.email
+      });
+
+      return await this.tribeService.closeTribe(id, req.user.sub);
+    } catch (error) {
+      console.error('Error in close tribe controller:', {
+        error: error.message,
+        stack: error.stack,
+        tribeId: id,
+        userId: req.user?.sub
+      });
+
+      if (error instanceof BadRequestException ||
+          error instanceof NotFoundException ||
+          error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException({
+        message: 'Error closing tribe',
+        details: error.message,
+        tribeId: id
+      });
+    }
+  }
 }
