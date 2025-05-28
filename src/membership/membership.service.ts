@@ -207,4 +207,20 @@ export class MembershipService {
     });
     return membership ? membership.role : null;
   }
+
+
+  async rejectPendingMemberships(userId: string, tribeId: string): Promise<string> {
+    const membership = await this.membershipModel.findOne({
+      user: new Types.ObjectId(userId),
+      tribe: new Types.ObjectId(tribeId),
+      status: MembershipStatus.PENDING
+    });
+    console.log('Rejecting membership:', membership);
+    if (!membership) {
+      throw new NotFoundException(`Pending membership not found for user ${userId} in tribe ${tribeId}`);
+    }
+    membership.status = MembershipStatus.REJECTED;
+    await membership.save();
+    return `Pending membership for user ${userId} in tribe ${tribeId} has been rejected`;
+    }
 }

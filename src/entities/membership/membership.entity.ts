@@ -74,5 +74,4 @@ export class Membership {
 export const MembershipSchema = SchemaFactory.createForClass(Membership);
 
 // Create a compound index to ensure unique user-tribe pairs
-MembershipSchema.index({ user: 1, tribe: 1 }, { unique: true });
-  
+// MembershipSchema.index({ user: 1, tribe: 1 }, { unique: true });

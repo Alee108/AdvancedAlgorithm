@@ -469,6 +469,7 @@ export class TribeService {
           //reject all pending memberships for this user
           await this.rejectPastMemberships(userId);
         }
+        console.log(`Creating membership request for user ${userId} to tribe ${tribeId}`);
         // Create new membership request
         const membership = new this.membershipModel({
           user: new Types.ObjectId(userId),
@@ -476,10 +477,10 @@ export class TribeService {
           status: tribe.visibility == 'PUBLIC'? MembershipStatus.ACTIVE: MembershipStatus.PENDING,
           role: TribeRole.MEMBER
         });
-
+        console.log(`Membership request created: ${JSON.stringify(membership)}`);
         // Save the membership
         savedMembership = await membership.save();
-
+        console.log(`Membership request saved: ${JSON.stringify(savedMembership)}`);
         // Add the membership to the tribe's memberships array
         
         await this.tribeModel.findByIdAndUpdate(

@@ -158,4 +158,21 @@ export class MembershipController {
     const count = await this.membershipService.getActiveMembersCount(tribeId);
     return { count };
   }
+
+
+  //modifica questo per prendere i dati cosi `/tribes/reject-pending/${tribeId}/${userId}`
+  @Post('reject-pending/:tribeId/:userId')
+  @ApiOperation({ summary: 'Reject a pending membership by tribe and user' })
+  @ApiResponse({ status: 200, description: 'Pending membership rejected successfully' })
+  @ApiResponse({ status: 404, description: 'Membership not found' })
+  async rejectPendingMembership(
+    @Param('tribeId') tribeId: string,
+    @Param('userId') userId: string
+  ) {
+    if (!tribeId || !userId) {
+      throw new UnauthorizedException('Tribe ID and User ID are required');
+    }
+    return this.membershipService.rejectPendingMemberships(userId,tribeId);
+  }
+  
 }
