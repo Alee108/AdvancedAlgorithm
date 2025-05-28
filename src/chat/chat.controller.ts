@@ -1,23 +1,26 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, HttpCode, HttpStatus, ParseIntPipe, Logger } from '@nestjs/common';
-import { ChatService } from './chat.service';
-import { User } from 'src/entities/users/users.entity';
-import { ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
-import { Public } from 'src/auth/decorators/public.decorators';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { ChatService, ChatInfo, PopulatedMessage } from './chat.service';
 import { Message } from 'src/entities/chat/chat.entity';
+import { AuthGuard } from '../auth/auth.guard';
 
-@Controller('chat')
 @ApiBearerAuth()
+@ApiTags('Chat')
+@Controller('chat')
+@UseGuards(AuthGuard)
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
-  private readonly logger = new Logger(ChatController.name);
 
   @Get(':userId')
-  async findAllChatsByUser(@Param('userId') userId: string) {
+  @ApiOperation({ summary: 'Get all chats for a user' })
+  async findAllChatsByUser(@Param('userId') userId: string): Promise<ChatInfo[]> {
     return this.chatService.findAllChatsByUser(userId);
   }
 
   @Post()
-  createMsg(@Body() msg: Message) {
+  @ApiOperation({ summary: 'Create a new message' })
+  @ApiBody({ type: Message })
+  async createMsg(@Body() msg: Partial<Message>): Promise<PopulatedMessage> {
     return this.chatService.create(msg);
   }
 
