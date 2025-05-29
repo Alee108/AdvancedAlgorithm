@@ -5,6 +5,7 @@ import { Notification } from './entities/notification.entity';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationError } from './exceptions/notification.error';
 import { NotificationResponseDto } from './dto/notification-response.dto';
+import { NotificationsGateway } from './notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
@@ -13,6 +14,7 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<Notification>,
+    private readonly notificationGateway:NotificationsGateway
   ) {}
 
   async createNotification(notificationData: CreateNotificationDto): Promise<NotificationResponseDto> {
@@ -27,7 +29,7 @@ export class NotificationsService {
       // Create and save the notification
       const notification = await this.notificationModel.create(notificationData);
       this.logger.log(`Notification created for user ${notificationData.userId}`);
-
+      this.notificationGateway.sendNotification(notification.userId,notification)
       return new NotificationResponseDto(notification, 'Notification created successfully');
     } catch (error) {
       this.logger.error(`Error creating notification: ${error.message}`, {

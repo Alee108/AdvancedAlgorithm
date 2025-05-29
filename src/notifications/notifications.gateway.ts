@@ -75,11 +75,14 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
   // Metodo per inviare una notifica a un utente specifico
   async sendNotification(userId: string, notification: Notification) {
+    this.logger.log(notification)
     try {
       const recipientSocketId = await this.redisClient.get(`user:${userId}`);
+      this.logger.warn("SOCKET ID",recipientSocketId)
       if (recipientSocketId) {
         this.logger.log(`User ${userId} is online (socket: ${recipientSocketId}), sending notification`);
         this.io.to(recipientSocketId).emit('notification', notification);
+        this.logger.log("sended notification")
       } else {
         this.logger.warn(`User ${userId} is not online, notification will be available when they connect`);
       }
