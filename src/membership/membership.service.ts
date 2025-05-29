@@ -215,7 +215,6 @@ export class MembershipService {
       tribe: new Types.ObjectId(tribeId),
       status: MembershipStatus.PENDING
     });
-    console.log('Rejecting membership:', membership);
     if (!membership) {
       throw new NotFoundException(`Pending membership not found for user ${userId} in tribe ${tribeId}`);
     }

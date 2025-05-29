@@ -9,6 +9,8 @@ import { Membership, MembershipStatus } from '../entities/membership/membership.
 import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
 import { Tribe, TribeDocument } from '../entities/tribe/tribe.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification-type.enum';
 
 export interface CreatePostData {
   description: string;
@@ -30,7 +32,8 @@ export class PostService {
     private readonly userModel: Model<UserDocument>,
     private neo4jService: Neo4jService,
     @InjectModel(Tribe.name)
-    private readonly tribeModel: Model<TribeDocument>
+    private readonly tribeModel: Model<TribeDocument>,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
@@ -200,6 +203,19 @@ export class PostService {
           for (const tag of post.metadata.keywords) {
             await this.neo4jService.createOrUpdateUserInterest(userId, tag, 2); // Higher weight for likes
           }
+        }
+
+        // Notifica l'autore del post se non è lo stesso utente
+        if (post.userId.toString() !== userId) {
+          await this.notificationsService.createNotification({
+            userId: post.userId.toString(),
+            type: NotificationType.POST_LIKE,
+            content: `Qualcuno ha messo like al tuo post`,
+            payload: {
+              postId: post._id.toString(),
+              likedBy: userId,
+            },
+          });
         }
       }
 

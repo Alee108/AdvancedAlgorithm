@@ -1,28 +1,24 @@
 import { Module } from '@nestjs/common';
+import { RedisService } from './redis.service';
 import { createClient } from 'redis';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 @Module({
-  imports: [ConfigModule],
   providers: [
     {
       provide: 'REDIS_CLIENT',
-      inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => {
+      useFactory: async () => {
         const client = createClient({
-          socket: {
-            host: configService.get<string>('REDIS_HOST', 'localhost'),
-            port: configService.get<number>('REDIS_PORT', 6379),
-          },
+          url: process.env.REDIS_URL || 'redis://localhost:6379',
         });
+
+        client.on('error', (err) => console.error('Redis Client Error', err));
         await client.connect();
+
         return client;
       },
     },
+    RedisService,
   ],
-  exports: ['REDIS_CLIENT'],
+  exports: [RedisService, 'REDIS_CLIENT'],
 })
 export class RedisModule {}

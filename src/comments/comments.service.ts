@@ -4,12 +4,15 @@ import { Model, Types } from 'mongoose';
 import { Comment, CommentDocument } from '../entities/comments/comments.entity';
 import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 import { Post } from '../entities/post/post.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from 'src/notifications/enums/notification-type.enum';
 
 @Injectable()
 export class CommentsService {
   constructor(
     @InjectModel(Comment.name) private commentModel: Model<Comment>,
-    @InjectModel(Post.name) private postModel: Model<Post>
+    @InjectModel(Post.name) private postModel: Model<Post>,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async create(createCommentDto: CreateCommentDto, userId: string, postId: string): Promise<any> {
@@ -32,6 +35,22 @@ export class CommentsService {
       postId,
       { $push: { comments: savedComment._id } }
     );
+    console.log("QUA")
+    // Create notification for post owner
+    if (post.userId.toString() !== userId) { // Don't notify if user comments on their own post
+      await this.notificationsService.createNotification({
+        userId: post.userId.toString(),
+        type: NotificationType.POST_COMMENT,
+        payload: {
+          id: savedComment._id.toString(),
+          postId: postId,
+          commentText: createCommentDto.text,
+          commenterId: userId
+        },
+        content: `Hai ricevuto un nuovo commento`,
+      });
+      console.log("notifica inviata")
+    }
 
     // Recupera il post aggiornato con i commenti popolati
     const updatedPost = await this.postModel

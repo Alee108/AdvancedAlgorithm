@@ -5,13 +5,16 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Message, MessageSchema } from 'src/entities/chat/chat.entity';
 import { ChatService } from './chat.service';
 import { RedisModule } from 'src/redis/redis.module';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
-    RedisModule
+    RedisModule,
+    NotificationsModule
   ],
   controllers: [ChatController],
   providers: [ChatGateway, ChatService]
 })
 export class ChatModule {}
+

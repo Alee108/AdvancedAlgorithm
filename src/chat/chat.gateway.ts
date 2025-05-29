@@ -16,6 +16,8 @@ import { Message } from 'src/entities/chat/chat.entity';
 import { JwtService } from '@nestjs/jwt';
 import { Inject } from '@nestjs/common';
 import { createClient } from 'redis';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { NotificationType } from 'src/notifications/enums/notification-type.enum';
 
 @ApiBearerAuth()
 @WebSocketGateway({
@@ -35,11 +37,11 @@ export class ChatGateway
   private readonly logger = new Logger(ChatGateway.name);
 
   private clientMap: Map<string, Socket> = new Map();
-
   constructor(
     @Inject('REDIS_CLIENT') private readonly redisClient,
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @WebSocketServer() io: Server;
@@ -55,9 +57,12 @@ export class ChatGateway
         throw new Error('No token provided');
       }
   
-      const payload = await this.jwtService.verifyAsync(token);
+      // Remove 'Bearer ' prefix if present
+      const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+      
+      const payload = await this.jwtService.verifyAsync(cleanToken);
       const userId = payload.sub.toString();
-  
+
       await this.redisClient.set(`user:${userId}`, client.id, {
         EX: 1800, //30 min exp
       });
@@ -120,7 +125,18 @@ export class ChatGateway
     client.emit('receive', receivedMsg);
     
     // Send message to receiver if online
-    this.sendMSGtoReceiver(message);
+    await this.sendMSGtoReceiver(message);
+
+      // Send notification to receiver
+      await this.notificationsService.createNotification({
+        userId: message.receiver._id.toString(),
+        type: NotificationType.NEW_MESSAGE,
+        content: `Hai ricevuto un nuovo messaggio`,
+        payload: {
+          senderId: client.id,
+          messageContent: message.message_text,
+        },
+      });
   }
 
   private async sendMSGtoReceiver(message: PopulatedMessage) {

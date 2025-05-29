@@ -40,7 +40,6 @@ export class MembershipController {
       if (!id) {
         throw new UnauthorizedException('Membership ID is required');
       }
-      console.log('Updating membership with ID:', id);
       const updateData = {
         ...updateMembership,
         updatedAt: new Date(),

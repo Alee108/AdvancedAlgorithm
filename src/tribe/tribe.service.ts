@@ -10,6 +10,8 @@ import { Membership, MembershipStatus, TribeRole } from '../entities/membership/
 import { Post } from '../entities/post/post.entity';
 import { PostService } from '../post/post.service';
 import { MembershipService } from '../membership/membership.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification-type.enum';
 
 @Injectable()
 export class TribeService {
@@ -26,7 +28,8 @@ export class TribeService {
     private postModel: Model<Post>,
     private postService: PostService,
     @Inject(forwardRef(() => MembershipService))
-    private membershipService: MembershipService
+    private membershipService: MembershipService,
+    private notificationsService: NotificationsService
   ) {}
 
   async create(createTribeDto: CreateTribeDto, founderId: string): Promise<Tribe> {
@@ -100,6 +103,16 @@ export class TribeService {
           throw new NotFoundException('Tribe not found after creation');
         }
 
+        await this.notificationsService.createNotification({
+          userId: founder._id.toString(),
+          type: NotificationType.TRIBE_MEMBERSHIP_ACCEPTED,
+          content: `Sei stato accettato nella tribù ${savedTribe.name}`,
+          payload: {
+            tribeId: savedTribe._id.toString(),
+            tribeName: savedTribe.name,
+          },
+        });
+
         return populatedTribe;
       } catch (error) {
         // If anything fails, try to clean up
@@ -141,6 +154,16 @@ export class TribeService {
         throw new NotFoundException('Tribe not found after update');
       }
 
+      await this.notificationsService.createNotification({
+        userId: userId,
+        type: NotificationType.TRIBE_UPDATE,
+        content: `La tribù ${updatedTribe.name} è stata aggiornata`,
+        payload: {
+          tribeId: updatedTribe._id.toString(),
+          tribeName: updatedTribe.name,
+        },
+      });
+
       return updatedTribe;
     } catch (error) {
       if (error.code === 11000) { // MongoDB duplicate key error
@@ -180,6 +203,16 @@ export class TribeService {
         // Use deleteOne() instead of remove()
         await this.tribeModel.deleteOne({ _id: new Types.ObjectId(tribeId) });
         console.log(`Successfully deleted tribe ${tribeId}`);
+
+        await this.notificationsService.createNotification({
+          userId: userId,
+          type: NotificationType.TRIBE_MEMBER_REMOVED,
+          content: `Sei stato rimosso dalla tribù ${tribe.name}`,
+          payload: {
+            tribeId: tribe._id.toString(),
+            tribeName: tribe.name,
+          },
+        });
 
         return "Tribe deleted successfully";
       } catch (error) {
@@ -243,6 +276,17 @@ export class TribeService {
           }
         }     
       }
+
+      await this.notificationsService.createNotification({
+        userId: userId,
+        type: NotificationType.TRIBE_UPDATE,
+        content: `La tribù ${updatedTribe.name} è stata aggiornata`,
+        payload: {
+          tribeId: updatedTribe._id.toString(),
+          tribeName: updatedTribe.name,
+        },
+      });
+
       return updatedTribe;
     } catch (error) {
       console.error('Error in update tribe visibility service:', error);
@@ -500,6 +544,15 @@ export class TribeService {
           { $push: { memberships: savedMembership._id } }
         ).exec();
 
+        await this.notificationsService.createNotification({
+          userId: userId,
+          type: NotificationType.TRIBE_MEMBERSHIP_REQUEST,
+          content: `Hai inviato una richiesta di adesione alla tribù ${tribe.name}`,
+          payload: {
+            tribeId: tribe._id.toString(),
+            tribeName: tribe.name,
+          },
+        });
 
         return savedMembership;
       } catch (error) {
@@ -547,6 +600,16 @@ export class TribeService {
         tribeId,
         { $pull: { memberships: membership._id } }
       );
+
+      await this.notificationsService.createNotification({
+        userId: userId,
+        type: NotificationType.TRIBE_MEMBER_REMOVED,
+        content: `Sei stato rimosso dalla tribù ${tribe.name}`,
+        payload: {
+          tribeId: tribe._id.toString(),
+          tribeName: tribe.name,
+        },
+      });
     } catch (error) {
       console.error('Error in leaveTribe service:', error);
       throw error;
@@ -745,6 +808,16 @@ export class TribeService {
       tribe.visibility = TribeVisibility.CLOSED;
       await tribe.save();
 
+      await this.notificationsService.createNotification({
+        userId: userId,
+        type: NotificationType.TRIBE_MEMBER_REMOVED,
+        content: `La tribù ${tribe.name} è stata chiusa`,
+        payload: {
+          tribeId: tribe._id.toString(),
+          tribeName: tribe.name,
+        },
+      });
+
       return "Tribe closed successfully";
     } catch (error) {
       console.error('Error in close tribe service:', error);
@@ -787,6 +860,16 @@ export class TribeService {
         tribeId,
         { $pull: { memberships: membership._id } }
       );
+
+      await this.notificationsService.createNotification({
+        userId: userId,
+        type: NotificationType.TRIBE_MEMBER_REMOVED,
+        content: `Sei stato rimosso dalla tribù ${tribe.name}`,
+        payload: {
+          tribeId: tribe._id.toString(),
+          tribeName: tribe.name,
+        },
+      });
 
       return membership;
     } catch (error) {
@@ -920,5 +1003,72 @@ export class TribeService {
       tribeCreatedAt: tribe.createdAt,
       visibility: tribe.visibility
     };
+  }
+
+  async acceptMembershipRequest(tribeId: string, userId: string) {
+    const tribe = await this.tribeModel.findById(tribeId);
+
+    if (!tribe) {
+      throw new Error('Tribe not found');
+    }
+
+    // ... logica per accettare la richiesta ...
+
+    await this.notificationsService.createNotification({
+      userId: userId,
+      type: NotificationType.TRIBE_MEMBERSHIP_ACCEPTED,
+      content: `La tua richiesta di adesione alla tribù ${tribe.name} è stata accettata`,
+      payload: {
+        tribeId: tribe._id.toString(),
+        tribeName: tribe.name,
+      },
+    });
+
+    return tribe;
+  }
+
+  async removeFromTribe(tribeId: string, userId: string) {
+    const tribe = await this.tribeModel.findById(tribeId);
+
+    if (!tribe) {
+      throw new Error('Tribe not found');
+    }
+
+    // ... logica per rimuovere l'utente ...
+
+    await this.notificationsService.createNotification({
+      userId: userId,
+      type: NotificationType.TRIBE_MEMBER_REMOVED,
+      content: `Sei stato rimosso dalla tribù ${tribe.name}`,
+      payload: {
+        tribeId: tribe._id.toString(),
+        tribeName: tribe.name,
+      },
+    });
+
+    return tribe;
+  }
+
+  async promoteToModerator(tribeId: string, userId: string) {
+    const tribe = await this.tribeModel.findById(tribeId);
+
+    if (!tribe) {
+      throw new Error('Tribe not found');
+    }
+
+    // ... logica per promuovere l'utente ...
+
+    await this.notificationsService.createNotification({
+      userId: userId,
+      type: NotificationType.TRIBE_PROMOTION,
+      content: `Sei stato promosso a moderatore della tribù ${tribe.name}`,
+      payload: {
+        tribeId: tribe._id.toString(),
+        tribeName: tribe.name,
+        newRole: 'MODERATOR',
+      },
+    });
+
+    return tribe;
   }
 }

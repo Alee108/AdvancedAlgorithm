@@ -12,6 +12,7 @@ import { TribeModule } from './tribe/tribe.module';
 import { MembershipModule } from './membership/membership.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RecommendationModule } from './recommendation/recommendation.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ dotenv.config();
     ChatModule,
     PostModule,
     RedisModule,
+    NotificationsModule,
     CommentsModule,
     TribeModule,
     MembershipModule,

@@ -9,6 +9,7 @@ import { Post, PostSchema } from '../entities/post/post.entity';
 import { PostModule } from '../post/post.module';
 import { MembershipModule } from '../membership/membership.module';
 import { TribeBusinessRulesService } from './tribe-business-rules.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { TribeBusinessRulesService } from './tribe-business-rules.service';
       { name: Post.name, schema: PostSchema }
     ]),
     PostModule,
-    forwardRef(() => MembershipModule)
+    forwardRef(() => MembershipModule),
+    NotificationsModule
   ],
   controllers: [TribeController],
   providers: [TribeService,TribeBusinessRulesService],

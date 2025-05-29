@@ -4,13 +4,15 @@ import { CommentsService } from './comments.service';
 import { CommentsController } from './comments.controller';
 import { Comment, CommentSchema } from '../entities/comments/comments.entity';
 import { Post, PostSchema } from '../entities/post/post.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Comment.name, schema: CommentSchema },
       { name: Post.name, schema: PostSchema }
-    ])
+    ]),
+    NotificationsModule
   ],
   controllers: [CommentsController],
   providers: [CommentsService],

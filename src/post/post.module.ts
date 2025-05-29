@@ -10,6 +10,7 @@ import { Membership, MembershipSchema } from '../entities/membership/membership.
 import { User, UserSchema } from '../entities/users/users.entity';
 import { Neo4jModule } from '../neo4j/neo4j.module';
 import { Tribe, TribeSchema } from '../entities/tribe/tribe.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -39,7 +40,8 @@ import { Tribe, TribeSchema } from '../entities/tribe/tribe.entity';
       },
     ]),
     CommentsModule,
-    Neo4jModule
+    Neo4jModule,
+    NotificationsModule
   ],
   controllers: [PostController],
   providers: [PostService],
