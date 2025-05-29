@@ -22,7 +22,7 @@ export class RecommendationController {
     return this.recommendationService.getRecommendedPosts(req.user.sub, limit);
   }
 
-  @Post('posts/:postId/view')
+  /*@Post('posts/:postId/view')
   @ApiOperation({ summary: 'Record a post view for recommendation purposes' })
   @ApiResponse({ status: 200, description: 'View recorded successfully' })
   async recordPostView(
@@ -31,5 +31,5 @@ export class RecommendationController {
   ) {
     await this.recommendationService.recordPostView(req.user.sub, postId);
     return { success: true };
-  }
+  }*/
 } 

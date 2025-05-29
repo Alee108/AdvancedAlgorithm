@@ -265,20 +265,19 @@ export class RecommendationService {
     try {
       const posts = await this.postModel
         .find({ $and: matchConditions })
-        .populate('userId', 'name surname username profilePhoto verified')
-        .populate('tribeId', 'name category memberCount')
+        .populate('userId', 'name surname username profilePhoto')
+        .populate('tribeId', 'name')
         .populate({
           path: 'comments',
-          options: { limit: 3, sort: { createdAt: -1 } }
+          populate: { path: 'userId', select: 'name surname username profilePhoto' }
         })
         .sort({ createdAt: -1 })
         .limit(this.MAX_POSTS_TO_SCORE)
-        .lean()
         .exec();
 
       return posts;
     } catch (error) {
-      this.logger.error(`Error getting candidate posts for ${userId}:`, error);
+      this.logger.error(`Error getting candidate posts for user ${userId}:`, error);
       return [];
     }
   }
@@ -424,19 +423,20 @@ export class RecommendationService {
   private async getFallbackLevel1(limit: number, userId?: string): Promise<PostDocument[]> {
     try {
       const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
-      
       const posts = await this.postModel
         .find({ 
           archived: false,
           createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
           ...excludeUser
         })
-        .populate('userId', 'name surname username profilePhoto verified')
-        .populate('tribeId', 'name category')
-        .populate('comments')
+        .populate('userId', 'name surname username profilePhoto')
+        .populate('tribeId', 'name')
+        .populate({
+          path: 'comments',
+          populate: { path: 'userId', select: 'name surname username profilePhoto' }
+        })
         .sort({ createdAt: -1 })
-        .limit(limit * 3) // Get more to sort by engagement
-        .lean()
+        .limit(limit * 3)
         .exec();
 
       // Sort by engagement score in JavaScript
@@ -458,7 +458,6 @@ export class RecommendationService {
   private async getFallbackLevel2(limit: number, userId?: string): Promise<PostDocument[]> {
     try {
       const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
-      
       return await this.postModel
         .find({ 
           archived: false,
@@ -468,12 +467,14 @@ export class RecommendationService {
           },
           ...excludeUser
         })
-        .populate('userId', 'name surname username profilePhoto verified')
-        .populate('tribeId', 'name category')
-        .populate('comments')
+        .populate('userId', 'name surname username profilePhoto')
+        .populate('tribeId', 'name')
+        .populate({
+          path: 'comments',
+          populate: { path: 'userId', select: 'name surname username profilePhoto' }
+        })
         .sort({ createdAt: -1 })
         .limit(limit * 2)
-        .lean()
         .exec();
     } catch (error) {
       this.logger.warn('Level 2 fallback failed:', error);
@@ -485,22 +486,22 @@ export class RecommendationService {
   private async getFallbackLevel3(limit: number, userId?: string): Promise<PostDocument[]> {
     try {
       const excludeUser = userId ? { userId: { $ne: new Types.ObjectId(userId) } } : {};
-      
       return await this.postModel
         .find({ 
           archived: false,
           ...excludeUser
         })
-        .populate('userId', 'name surname username profilePhoto verified')
-        .populate('tribeId', 'name category')
-        .populate('comments')
-        .sort({ createdAt: -1 }) // Simply latest posts
+        .populate('userId', 'name surname username profilePhoto')
+        .populate('tribeId', 'name')
+        .populate({
+          path: 'comments',
+          populate: { path: 'userId', select: 'name surname username profilePhoto' }
+        })
+        .sort({ createdAt: -1 })
         .limit(limit)
-        .lean()
         .exec();
     } catch (error) {
       this.logger.error('Level 3 fallback failed:', error);
-      // If everything fails, return empty array
       return [];
     }
   }
@@ -511,7 +512,6 @@ export class RecommendationService {
 
     for (const post of posts) {
       if (result.length >= limit) break;
-      
       const authorId = post.userId._id?.toString();
       if (!authorId || !seenAuthors.has(authorId) || seenAuthors.size < 3) {
         result.push(post);
@@ -520,103 +520,5 @@ export class RecommendationService {
     }
 
     return result;
-  }
-
-  async recordPostView(userId: string, postId: string): Promise<void> {
-    try {
-      const userObjectId = new Types.ObjectId(userId);
-      const postObjectId = new Types.ObjectId(postId);
-
-      // Record view and update user interests asynchronously
-      await Promise.all([
-        this.postViewModel.findOneAndUpdate(
-          { userId: userObjectId, postId: postObjectId },
-          { 
-            userId: userObjectId, 
-            postId: postObjectId,
-            viewedAt: new Date()
-          },
-          { upsert: true, new: true }
-        ).exec(),
-        this.updateUserInterestsFromView(userId, postId)
-      ]);
-
-      // Invalidate relevant caches
-      await Promise.all([
-        this.cacheManager.del(`recommendations:${userId}:20`),
-        this.cacheManager.del(`recommendations:${userId}:10`)
-      ]);
-
-    } catch (error) {
-      this.logger.error(`Error recording post view for user ${userId}, post ${postId}:`, error);
-    }
-  }
-
-  private async updateUserInterestsFromView(userId: string, postId: string): Promise<void> {
-    try {
-      const post = await this.postModel
-        .findById(postId)
-        .select('metadata.keywords')
-        .lean()
-        .exec();
-
-      if (post?.metadata?.keywords?.length) {
-        const session = this.neo4jService.getSession();
-        try {
-          await session.run(
-            `
-            MATCH (u:User {id: $userId})
-            UNWIND $tags AS tag
-            MERGE (t:Tag {name: tag})
-            MERGE (u)-[r:INTERESTED_IN]->(t)
-            SET r.weight = COALESCE(r.weight, 0) + 0.1,
-                r.lastUpdated = datetime()
-            `,
-            { userId, tags: post.metadata.keywords }
-          );
-        } finally {
-          await session.close();
-        }
-      }
-    } catch (error) {
-      this.logger.warn(`Error updating user interests from view:`, error);
-    }
-  }
-
-  // Additional method for A/B testing different algorithms
-  async getRecommendationsWithAlgorithm(
-    userId: string, 
-    algorithm: 'collaborative' | 'content' | 'hybrid' | 'trending',
-    limit: number = 20
-  ): Promise<PostDocument[]> {
-    // Implementation for different recommendation algorithms
-    // This allows for A/B testing and algorithm comparison
-    switch (algorithm) {
-      case 'collaborative':
-        return this.getCollaborativeRecommendations(userId, limit);
-      case 'content':
-        return this.getContentBasedRecommendations(userId, limit);
-      case 'trending':
-        return this.getTrendingRecommendations(limit);
-      default:
-        return this.getRecommendedPosts(userId, limit);
-    }
-  }
-
-  private async getCollaborativeRecommendations(userId: string, limit: number): Promise<PostDocument[]> {
-    // Find users with similar interests and recommend their liked posts
-    // Implementation would use Neo4j to find similar users
-    return this.getFallbackPosts(limit);
-  }
-
-  private async getContentBasedRecommendations(userId: string, limit: number): Promise<PostDocument[]> {
-    // Pure content-based filtering using only user interests and post tags
-    // Implementation focuses only on content similarity
-    return this.getFallbackPosts(limit);
-  }
-
-  private async getTrendingRecommendations(limit: number): Promise<PostDocument[]> {
-    // Get currently trending posts regardless of user preferences
-    return this.getFallbackPosts(limit);
   }
 }

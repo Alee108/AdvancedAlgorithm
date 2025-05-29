@@ -12,7 +12,7 @@ export class CommentsService {
     @InjectModel(Post.name) private postModel: Model<Post>
   ) {}
 
-  async create(createCommentDto: CreateCommentDto, userId: string, postId: string): Promise<CommentDocument> {
+  async create(createCommentDto: CreateCommentDto, userId: string, postId: string): Promise<any> {
     // Check if post exists
     const post = await this.postModel.findById(postId);
     if (!post) {
@@ -33,7 +33,29 @@ export class CommentsService {
       { $push: { comments: savedComment._id } }
     );
 
-    return savedComment;
+    // Recupera il post aggiornato con i commenti popolati
+    const updatedPost = await this.postModel
+      .findById(postId)
+      .populate({
+        path: 'comments',
+        populate: { path: 'userId', select: 'name surname username profilePhoto' }
+      })
+      .exec();
+
+    if (!updatedPost) {
+      throw new NotFoundException('Post not found after update');
+    }
+
+    // Trova il commento appena creato nell'array dei commenti popolati
+    const populatedComment = updatedPost.comments.find(
+      (c: any) => c._id.toString() === savedComment._id.toString()
+    );
+
+    if (!populatedComment) {
+      throw new NotFoundException('Comment not found in post');
+    }
+
+    return populatedComment;
   }
 
   async findAll(): Promise<CommentDocument[]> {
@@ -109,4 +131,4 @@ export class CommentsService {
       .sort({ createdAt: -1 })
       .exec();
   }
-} 
+}
