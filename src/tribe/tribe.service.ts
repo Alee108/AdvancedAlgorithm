@@ -312,14 +312,20 @@ export class TribeService {
   }
 
   async handleMembershipRequest(tribeId: string, userId: string, action: 'accept' | 'reject', moderatorId: string): Promise<Membership> {
+    //console.log(tribeId,userId,action)
     const tribe = await this.tribeModel.findById(tribeId);
     if (!tribe) {
       throw new NotFoundException('Tribe not found');
     }
-
-    // Check if the user has permission
+    console.log(tribe)
+    // Check if the user has permission to view pending requests
     const isFounder = tribe.founder._id.toString() === moderatorId;
-    const isModerator = tribe.memberships.some(membership => 
+    //console.log(tribe.memberships)
+    const memberhships = await Promise.all(
+      tribe.memberships.map((elem) => this.membershipService.findById(elem._id.toString()))
+    ); 
+    //const memberships = this.mem
+    const isModerator = memberhships.some(membership => 
       membership.user._id.toString() === moderatorId && 
       membership.role === TribeRole.MODERATOR
     );
@@ -327,7 +333,6 @@ export class TribeService {
     if (!isFounder && !isModerator) {
       throw new ForbiddenException('Only founders and moderators can handle membership requests');
     }
-
     //check if the user has active membership
     const activeMembership = await this.membershipModel.find({
       user: new Types.ObjectId(userId),
@@ -359,7 +364,8 @@ export class TribeService {
       tribe.memberships.push(membershipSaved);
       await tribe.save();
     }
-
+    const pendingMemberships = await this.membershipService.getAllMembershipRequestsByUserId(userId)
+    pendingMemberships.forEach((elem)=>{this.membershipService.rejectPendingMemberships(userId,elem.tribe._id.toString())}) 
     return membershipSaved;
   }
 
@@ -405,22 +411,28 @@ export class TribeService {
       throw new NotFoundException('Tribe not found');
     }
 
+    console.log(tribe)
 
     return this.membershipModel.find({
-      tribe: tribeId,
+      tribe: new Types.ObjectId(tribeId),
       status: MembershipStatus.ACTIVE
     }).populate('user', 'name surname username profilePhoto');
   }
 
   async getPendingRequests(tribeId: string, userId: string): Promise<Membership[]> {
-    const tribe = await this.tribeModel.findById(tribeId);
+    const tribe = await this.tribeModel.findById(tribeId)
     if (!tribe) {
       throw new NotFoundException('Tribe not found');
     }
 
     // Check if the user has permission to view pending requests
     const isFounder = tribe.founder._id.toString() === userId;
-    const isModerator = tribe.memberships.some(membership => 
+    //console.log(tribe.memberships)
+    const memberhships = await Promise.all(
+      tribe.memberships.map((elem) => this.membershipService.findById(elem._id.toString()))
+    ); 
+    //const memberships = this.mem
+    const isModerator = memberhships.some(membership => 
       membership.user._id.toString() === userId && 
       membership.role === TribeRole.MODERATOR
     );
@@ -430,7 +442,7 @@ export class TribeService {
     }
 
     return this.membershipModel.find({
-      tribe: tribeId,
+      tribe: new Types.ObjectId(tribeId),
       status: MembershipStatus.PENDING
     }).populate('user', 'name surname username profilePhoto');
   }
@@ -629,11 +641,12 @@ export class TribeService {
 
   private async validateTribeRole(tribeId: string, userId: string, allowedRoles: TribeRole[]): Promise<void> {
     const membership = await this.membershipModel.findOne({
-      tribe: tribeId,
-      user: userId,
+      tribe: new Types.ObjectId(tribeId),
+      user: new Types.ObjectId(userId),
       status: MembershipStatus.ACTIVE
     });
 
+    //console.log(membership)
     if (!membership || !allowedRoles.includes(membership.role)) {
       throw new ForbiddenException('Insufficient permissions for this operation');
     }
@@ -700,12 +713,12 @@ export class TribeService {
       if (!tribe) {
         throw new NotFoundException('Tribe not found');
       }
-
+     console.log(`Found tribe: ${JSON.stringify(tribe)}`);
       // Check if user is the founder
       if (tribe.founder.toString() !== userId) {
         throw new ForbiddenException('Only the founder can close the tribe');
       }
-
+      console.log(`User ${userId} is the founder of tribe ${tribeId}`);
       // Get all active memberships
       const memberships = await this.membershipModel.find({
         tribe: new Types.ObjectId(tribeId),
@@ -728,7 +741,7 @@ export class TribeService {
         }
       );
 
-      // Set tribe visibility to CLOSED
+      // Set tribe visibility to CLOSED and status to CLOSED
       tribe.visibility = TribeVisibility.CLOSED;
       await tribe.save();
 

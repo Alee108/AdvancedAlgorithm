@@ -90,9 +90,9 @@ export class TribeBusinessRulesService {
       throw new NotFoundException('Active membership not found');
     }
 
-    if (membership.role === TribeRole.FOUNDER) {
+    /*if (membership.role === TribeRole.FOUNDER) {
       throw new BadRequestException('Founder cannot leave the tribe. Close or delete it instead.');
-    }
+    }*/
   }
 
   /**

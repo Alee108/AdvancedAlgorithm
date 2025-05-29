@@ -24,13 +24,14 @@ export class UsersService {
     return this.userModel.find().exec();
   }
 
-  async findTopUsers(): Promise<UserDocument[]> {
-    return this.userModel.find()
+  async findTopUsers(user:string): Promise<UserDocument[]> {
+    const users = await this.userModel.find()
       .sort({ followers: -1 })
       .limit(50)
       .select('username name surname profilePhoto followers following')
       .lean()
       .exec();
+      return users.filter(elem => elem._id.toString() != user)
   }
 
   async findOne(email: string): Promise<UserDocument | null> {

@@ -28,8 +28,8 @@ export class UsersController {
   @Get('top')
   @ApiOperation({ summary: 'Get top 50 users by followers' })
   @ApiResponse({ status: 200, description: 'Return top 50 users ordered by followers count.' })
-  findTopUsers() {
-    return this.usersService.findTopUsers();
+  async findTopUsers( @Req() req: any) {
+    return this.usersService.findTopUsers(req.user.sub);
   }
 
   @Get('search')
