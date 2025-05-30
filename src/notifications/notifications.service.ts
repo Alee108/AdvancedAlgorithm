@@ -19,12 +19,7 @@ export class NotificationsService {
 
   async createNotification(notificationData: CreateNotificationDto): Promise<NotificationResponseDto> {
     try {
-      // Check for duplicate notifications
-      const existingNotification = await this.checkForDuplicate(notificationData);
-      if (existingNotification) {
-        this.logger.log(`Duplicate notification prevented for user ${notificationData.userId}`);
-        return new NotificationResponseDto(existingNotification, 'Duplicate notification prevented');
-      }
+
 
       // Create and save the notification
       const notification = await this.notificationModel.create(notificationData);
@@ -43,16 +38,6 @@ export class NotificationsService {
     }
   }
 
-  private async checkForDuplicate(notificationData: CreateNotificationDto): Promise<Notification | null> {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-
-    return this.notificationModel.findOne({
-      userId: notificationData.userId,
-      type: notificationData.type,
-      'payload.id': notificationData.payload.id,
-      createdAt: { $gte: fiveMinutesAgo }
-    });
-  }
 
   private async handleFailedNotification(notificationData: CreateNotificationDto, error: any): Promise<void> {
     try {

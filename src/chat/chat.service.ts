@@ -57,6 +57,7 @@ export class ChatService {
             { receiver: userId }
           ]
         })
+        //.sort({ createdAt: -1 })
         .populate<{ sender: PopulatedUser; receiver: PopulatedUser }>('sender', 'username email profilePhoto')
         .populate<{ sender: PopulatedUser; receiver: PopulatedUser }>('receiver', 'username email profilePhoto')
         .lean()
@@ -123,7 +124,8 @@ export class ChatService {
           messages,
           lastMessage: {
             text: lastMessage.message,
-            sent_at: lastMessage.sent_at
+            sent_at: lastMessage.sent_at,
+            senderId:lastMessage.senderId
           }
         };
       });
