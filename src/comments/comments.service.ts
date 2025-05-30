@@ -6,6 +6,7 @@ import { CreateCommentDto, UpdateCommentDto } from './comments.dto';
 import { Post } from '../entities/post/post.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from 'src/notifications/enums/notification-type.enum';
+import { BadWords } from 'src/post/badwords';
 
 @Injectable()
 export class CommentsService {
@@ -27,6 +28,8 @@ export class CommentsService {
       userId: new Types.ObjectId(userId),
       postId: new Types.ObjectId(postId)
     });
+    this.checkBadWords(comment.text)
+    
 
     const savedComment = await comment.save();
 
@@ -75,6 +78,17 @@ export class CommentsService {
     }
 
     return populatedComment;
+  }
+
+  
+  
+  private async checkBadWords(text: string): Promise<void> {
+    const words = text.toLowerCase().split(/\s+/);
+    for (const word of words) {
+      if (BadWords.includes(word)) {
+        throw new BadRequestException('Inappropriate language detected');
+      }
+    }
   }
 
   async findAll(): Promise<CommentDocument[]> {
