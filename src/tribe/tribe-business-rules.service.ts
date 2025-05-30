@@ -85,7 +85,7 @@ export class TribeBusinessRulesService {
       user: new Types.ObjectId(userId),
       status: MembershipStatus.ACTIVE
     });
-
+    console.log("MEMBERSHIPPPPPPPPPPPPPPPPPPPPPPP",membership)
     if (!membership) {
       throw new NotFoundException('Active membership not found');
     }

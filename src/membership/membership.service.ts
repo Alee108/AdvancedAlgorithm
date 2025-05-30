@@ -222,4 +222,8 @@ export class MembershipService {
     await membership.save();
     return `Pending membership for user ${userId} in tribe ${tribeId} has been rejected`;
     }
+
+    async findAllByUser(userId: string): Promise<MembershipDocument[]> {
+      return this.membershipModel.find({ user: new Types.ObjectId(userId) }).exec();
+    }
 }

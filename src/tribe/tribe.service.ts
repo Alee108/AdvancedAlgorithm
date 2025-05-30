@@ -544,6 +544,7 @@ export class TribeService {
           { $push: { memberships: savedMembership._id } }
         ).exec();
 
+        if(tribe.visibility == TribeVisibility.PRIVATE)
         await this.notificationsService.createNotification({
           userId: userId,
           type: NotificationType.TRIBE_MEMBERSHIP_REQUEST,

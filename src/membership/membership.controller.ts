@@ -150,6 +150,8 @@ export class MembershipController {
     }
   }
 
+
+  
   @Get('tribe/:tribeId/count')
   @ApiOperation({ summary: 'Get active members count for a tribe' })
   @ApiResponse({ status: 200, description: 'Returns the count of active members.' })
@@ -174,4 +176,10 @@ export class MembershipController {
     return this.membershipService.rejectPendingMemberships(userId,tribeId);
   }
   
+  @Get('allbyuser/:userId')
+  @ApiOperation({ summary: 'Get all memberships by user' })
+  @ApiResponse({ status: 200, description: 'Return all memberships for a user.' })
+  async getAllMembershipsByUser(@Param('userId') userId: string) {
+    return this.membershipService.findAllByUser(userId);
+  }
 }
