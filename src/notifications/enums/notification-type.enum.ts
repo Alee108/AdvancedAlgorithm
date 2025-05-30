@@ -2,6 +2,8 @@ export enum NotificationType {
   // Post related notifications
   POST_LIKE = 'POST_LIKE',
   POST_COMMENT = 'POST_COMMENT',
+  FOLLOW = 'FOLLOW',
+  UNFOLLOW = 'UNFOLLOW',
   
   // Tribe related notifications
   TRIBE_MEMBERSHIP_REQUEST = 'TRIBE_MEMBERSHIP_REQUEST',

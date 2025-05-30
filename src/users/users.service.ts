@@ -5,12 +5,16 @@ import { User, UserDocument } from '../entities/users/users.entity';
 import { Neo4jService } from '../neo4j/neo4j.service';
 import { CreateUserData, UpdateUserData } from './users.dto';
 import { UpdateVisibilityDto } from './dto/update-visibility.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from 'src/notifications/enums/notification-type.enum';
+import { CreateNotificationDto } from 'src/notifications/dto/create-notification.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    private neo4jService: Neo4jService
+    private neo4jService: Neo4jService,
+    private notificationService: NotificationsService
   ) {}
 
   async create(createUserData: CreateUserData): Promise<UserDocument> {
@@ -89,8 +93,17 @@ export class UsersService {
       await userToFollow.save();
     }
     this.neo4jService.createFollowRelationship(userId, userToFollowId);
-    return user;
-  }
+    
+  //inviare la notifica di follow
+
+  await this.notificationService.createNotification({   
+    content: `${user.username} ha iniziato a seguirti`,
+    userId: userToFollowId,
+    type: NotificationType.FOLLOW,
+    payload: {}
+  });
+  return user;
+}
 
   async unfollowUser(userId: string, userToUnfollowId: string): Promise<UserDocument> {
     const user = await this.findById(userId);
@@ -109,6 +122,12 @@ export class UsersService {
     await user.save();
     await userToUnfollow.save();
 
+    await this.notificationService.createNotification({   
+      content: `${user.username} ha smesso di seguirti`,
+      userId: userToUnfollowId,
+      type: NotificationType.UNFOLLOW,
+      payload: {}
+    });
     return user;
   }
 

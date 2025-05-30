@@ -105,6 +105,16 @@ export class NotificationsService {
     }
   }
 
+  async deleteAllNotifications(userId: string): Promise<void> {
+    try {
+      const result = await this.notificationModel.deleteMany({ userId });
+      this.logger.log(`Deleted ${result.deletedCount} notifications for user ${userId}`);
+    } catch (error) {
+      this.logger.error(`Error deleting all notifications: ${error.message}`);
+      throw new NotificationError('Failed to delete all notifications', error);
+    }
+  }
+
   async cleanupOldNotifications(): Promise<void> {
     try {
       const thirtyDaysAgo = new Date();

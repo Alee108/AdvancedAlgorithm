@@ -64,4 +64,17 @@ export class NotificationsController {
     await this.notificationsService.deleteNotification(id);
     return new NotificationResponseDto([], 'Notification deleted successfully');
   }
+
+  @Post('delete-all')
+  @ApiOperation({ summary: 'Delete all notifications for the current user' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'All notifications deleted successfully',
+    type: NotificationResponseDto 
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteAllNotifications(@Request() req): Promise<NotificationResponseDto> {
+    await this.notificationsService.deleteAllNotifications(req.user.sub);
+    return new NotificationResponseDto([], 'All notifications deleted successfully');
+  }
 } 
