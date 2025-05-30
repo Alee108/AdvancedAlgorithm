@@ -11,7 +11,7 @@ import { Neo4jService } from '../neo4j/neo4j.service';
 import { Tribe, TribeDocument } from '../entities/tribe/tribe.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification-type.enum';
-
+import { BadWords } from './badwords';
 export interface CreatePostData {
   description: string;
   location: string;
@@ -22,6 +22,7 @@ export interface CreatePostData {
 
 @Injectable()
 export class PostService {
+
   constructor(
     @InjectModel(Post.name)
     private readonly postModel: Model<PostDocument>,
@@ -38,6 +39,8 @@ export class PostService {
 
   async create(createPostData: CreatePostData): Promise<PostDocument> {
     try {
+      await this.checkBadWords(createPostData.description)
+
       // First check if user is the founder of the tribe
       const tribe = await this.tribeModel.findById(createPostData.tribeId);
       if (!tribe) {
@@ -75,11 +78,6 @@ export class PostService {
         throw new BadRequestException('Image size must not exceed 5MB');
       }
 
-      // Check for profanity in description (you can implement your own profanity filter)
-      const hasProfanity = await this.checkForProfanity(createPostData.description);
-      if (hasProfanity) {
-        throw new BadRequestException('Post description contains inappropriate content');
-      }
 
       // Create the post
       const post = new this.postModel(createPostData);
@@ -105,22 +103,16 @@ export class PostService {
     }
   }
 
-  private async checkForProfanity(text: string): Promise<boolean> {
-    // Implement your profanity filter here
-    // This is a simple example - you should use a proper profanity filter library
-    const profanityList = ['badword1', 'badword2']; // Add your profanity list
-    const words = text.toLowerCase().split(/\s+/);
-    return words.some(word => profanityList.includes(word));
-  }
 
-  async findAll(): Promise<PostDocument[]> {
-    return this.postModel
-      .find({ archived: false })
-      .populate('userId', 'name surname username profilePhoto')
-      .populate('tribeId', 'name')
-      .populate('comments')
-      .exec();
+private async checkBadWords(text: string): Promise<void> {
+  const words = text.toLowerCase().split(/\s+/);
+  for (const word of words) {
+    if (BadWords.includes(word)) {
+      throw new BadRequestException('Inappropriate language detected');
+    }
   }
+}
+
 
   async findOne(id: string): Promise<PostDocument> {
     const post = await this.postModel
