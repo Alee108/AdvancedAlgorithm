@@ -13,13 +13,26 @@ export class RecommendationController {
   @Get('posts')
   @ApiOperation({ summary: 'Get recommended posts for the current user' })
   @ApiResponse({ status: 200, description: 'Returns recommended posts' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Number of posts to return (default: 20)' })
+  //@ApiQuery({ name: 'limit', required: false, type: Number, description: 'Number of posts to return (default: 20)' })
   async getRecommendedPosts(
+    @Req() req: any,
+   // @Query('limit') limit?: number
+  ) {
+    const posts = await this.recommendationService.getRecommendedPosts(req.user.sub, 20);
+    console.log("found: ", posts.length, Date.now())
+    return posts
+  }
+
+  @Get('users')
+  @ApiOperation({ summary: 'Get recommended users based on followers and their followers' })
+  @ApiResponse({ status: 200, description: 'Returns recommended users' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Number of users to return (default: 20)' })
+  async getRecommendedUsers(
     @Req() req: any,
     @Query('limit') limit?: number
   ) {
-    console.log(`User ID: ${req.user.sub}, Limit: ${limit}`);
-    return this.recommendationService.getRecommendedPosts(req.user.sub, limit);
+    const users = await this.recommendationService.getRecommendedUsers(req.user.sub, limit);
+    return users;
   }
 
   /*@Post('posts/:postId/view')

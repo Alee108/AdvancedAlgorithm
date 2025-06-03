@@ -20,7 +20,7 @@ export class Post {
   location: string;
 
   @ApiProperty({ description: 'Base64 encoded image' })
-  @Prop({ required: true })
+  @Prop({ required: false })
   base64Image: string;
 
   @ApiProperty()
@@ -28,7 +28,7 @@ export class Post {
   userId: Types.ObjectId;
 
   @ApiProperty()
-  @Prop({ type: Types.ObjectId, ref: 'Tribe', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'Tribe', required: false })
   tribeId: Types.ObjectId;
 
   @ApiProperty()

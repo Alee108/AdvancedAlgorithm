@@ -177,7 +177,7 @@ private async checkBadWords(text: string): Promise<void> {
     try {
       const post = await this.findOne(postId);
       const userObjectId = new Types.ObjectId(userId);
-
+      console.log("here",post)
       if (!post.likes) {
         post.likes = [];
       }
@@ -186,16 +186,26 @@ private async checkBadWords(text: string): Promise<void> {
         likeId.toString() === userObjectId.toString()
       );
 
+      console.log("here2",hasLiked)
       if (!hasLiked) {
+        console.log("here2.1",userObjectId)
         post.likes.push(userObjectId);
-        await post.save();
+      try {
+  await post.save();
+} catch (err) {
+  console.error('Errore nel salvataggio del post:', err);
+  throw new BadRequestException('Errore nel salvataggio del post');
+}
 
         // Update user interests in Neo4j based on post tags
         if (post.metadata?.keywords) {
           for (const tag of post.metadata.keywords) {
+            console.log("here4",tag)
             await this.neo4jService.createOrUpdateUserInterest(userId, tag, 2); // Higher weight for likes
           }
         }
+
+        console.log("here5")
 
         // Notifica l'autore del post se non è lo stesso utente
         if (post.userId.toString() !== userId) {
@@ -210,6 +220,7 @@ private async checkBadWords(text: string): Promise<void> {
           });
         }
       }
+      console.log("here2",hasLiked)
 
       return post;
     } catch (error) {
